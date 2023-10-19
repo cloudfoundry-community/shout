@@ -1,7 +1,7 @@
 ;; vim:ft=lisp
-(defsystem "shout"
+(asdf:defsystem "shout"
   :name        "shout"
-  :version     "0.0.1"
+  :version     "0.0.2"
   :maintainer  "James Hunt"
   :author      "James Hunt"
   :license     "MIT"
