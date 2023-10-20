@@ -1,4 +1,4 @@
-FROM huntprod/cl
+FROM genesiscommunity/concourse-cl:ubuntu-jammy
 WORKDIR /cl
 ENV BUILD=/lib/cl
 ENV CL_SOURCE_REGISTRY=/cl

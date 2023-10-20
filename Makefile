@@ -60,9 +60,9 @@ coverage: quicklisp libs
 
 docker:
 	docker build \
-	  --build-arg BUILD_DATE="$(shell date -u --iso-8601)" \
+	  --build-arg BUILD_DATE="$(shell date -u -Iminutes)" \
 	  --build-arg VCS_REF="$(shell git rev-parse --short HEAD)" \
-	  -t huntprod/shout .
+	  -t genesiscommunity/shout:ubuntu-jammy .
 
 clean:
 	rm -rf $(BUILD)
