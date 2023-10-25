@@ -1,11 +1,11 @@
-FROM genesiscommunity/concourse-cl:ubuntu-jammy
+FROM --platform=linux/amd64 genesiscommunity/concourse-sfcl:ubuntu-jammy
 WORKDIR /cl
 ENV BUILD=/lib/cl
 ENV CL_SOURCE_REGISTRY=/cl
 
-RUN apt-get update \
- && apt-get install -y curl make \
- && rm -rf /var/lib/apt/lists/*
+# RUN apt-get update \
+#  && apt-get install -y curl make \
+#  && rm -rf /var/lib/apt/lists/*
 
 COPY Makefile .
 RUN make quicklisp libs

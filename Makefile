@@ -62,6 +62,7 @@ docker:
 	docker build \
 	  --build-arg BUILD_DATE="$(shell date -u -Iminutes)" \
 	  --build-arg VCS_REF="$(shell git rev-parse --short HEAD)" \
+	  --platform linux/amd64 \
 	  -t genesiscommunity/shout:ubuntu-jammy .
 
 clean:
