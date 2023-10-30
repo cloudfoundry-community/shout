@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 genesiscommunity/concourse-sfcl:ubuntu-jammy
+FROM --platform=linux/amd64 genesiscommunity/concourse-cl:ubuntu-jammy
 WORKDIR /cl
 ENV BUILD=/lib/cl
 ENV CL_SOURCE_REGISTRY=/cl
