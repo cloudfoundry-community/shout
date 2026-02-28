@@ -3,6 +3,6 @@
 (asdf:load-system :shout)
 (sb-ext:save-lisp-and-die
   "shout"
-  :compression nil
+  :compression t
   :executable  t
   :toplevel #'shout:shout)
