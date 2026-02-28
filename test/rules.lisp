@@ -184,8 +184,8 @@
     "String interpolation of metadata works"))
 
 (subtest "Time-based predicates"
-  (let ((rules::*NOW* (encode-universal-time 0 14 2 29 8 1997 4)))
-    ; It's August 29th, 2:14am Eastern (a Friday)
+  (let ((rules::*NOW* (encode-universal-time 0 14 2 29 8 1997)))
+    ; It's August 29th, 2:14am local time (a Friday)
     ; SkyNet has become self-aware.
     ; How do we notify about that?
 
