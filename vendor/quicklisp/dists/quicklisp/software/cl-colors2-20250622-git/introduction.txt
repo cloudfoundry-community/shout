@@ -1,0 +1,135 @@
+Table of Contents
+─────────────────
+
+1. Color classes
+2. Named colors
+3. Convex combinations
+4. Example session
+
+
+1 Color classes
+═══════════════
+
+  The two main color classes are rgb and hsv, which have slots red,
+  green, blue and hue, saturation, value respectively.  There is also an
+  rgb class with an alpha channel (slot alpha) called rgba.  In the rgb
+  class, valid slot values are from 0 to 1, while in the hsv class,
+  saturation and value are in the interval [0,1], but hue is in [0,360).
+
+  You can convert between rgb and hsv using rgb->hsv and hsv->rgb.  Note
+  that for the former, you need to specify what happens when the hue is
+  undefined (i.e. the color is gray).  By default, the hue of red (0) is
+  assigned.
+
+  Generic functions which find the appropriate conversion method are
+  available with names `as-rgb' and `as-hsv*'.  Use these if you want
+  your functions to handle various different color representations but
+  eventually you need to work with a single one.
+
+  The generic function `as-rgb' and `as-hsv*' specialized on string will
+  parse textual color definition.
+
+  Valid string formats are:
+
+  • [#]ff00ff or [#]fff (24 bit or 12bit depth colors in hexadecimal
+    digit format);
+  • rgb[a](255,255,0,[alpha-channel-value]);
+  • named colors.
+
+  Note: text in square brackets means that the string is optional.
+
+  `color-list' argument specify an alist where of cons cells the car is
+  a string representing a color name and the `cdr' the corresponding
+  color RGB struct.
+
+  The default for the aforementioned argument is the special variable
+  `*color-table*' with, in turn, is bound to `nil'. When `color-list' is
+  null, the lookup is made on `*x11-colors-list*', `*svg-colors-list*',
+  `*svg-extended-colors-list*' and `*gdk-colors-list*' in this
+  order. Otherwise the alist passed as parameter is searched for a
+  matching color name.
+
+  The functions `as-rgb' and `as-hsv*' also convert integer to color
+  struct
+
+  ┌────
+  │ (cl-colors2:as-rgb 16711681) ; → #S(CL-COLORS2:RGB :RED 1 :GREEN 0 :BLUE 1/255)
+  └────
+
+  The functions `as-rgb' and `as-hsv*' are specialized on symbol too,
+  the parameter is converted to string and passed to the same parsing
+  function again:
+
+  ┌────
+  │ (cl-colors2:as-rgb :blue)
+  └────
+
+  is equivalent to:
+
+  ┌────
+  │ (cl-colors2:as-rgb "blue")
+  └────
+
+  Finally if `errorp' is non-nil (the default is `T') failure to parse a
+  string representation of an rgb color will signal an error; if
+  `errorp' is null a parsing failure makes the function returns nil. If
+  `object' is not a string the parameter `errorp' is ignored.
+
+  But even if:
+
+  • `errorp' in not null and;
+  • the parsing fails and;
+  • `color' is not the empty string or its value is not "transparent"
+
+  a restart is available to convert to an rgb struct that, someway,
+  represents the value of ~color', see:
+  <https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#colours>")
+
+
+2 Named colors
+══════════════
+
+  Named colors are derived from
+
+  • parsing the X11 colors file;
+
+  • a set of the CSS color as described here:
+
+    • <https://www.w3.org/TR/2018/REC-css-color-3-20180619/#html4>
+    • <https://www.w3.org/TR/2018/REC-css-color-3-20180619/#svg-color>
+
+  • GDK colors;
+
+  As they are constants, names are between +'s.  All named colors are
+  rgb.
+
+
+3 Convex combinations
+═════════════════════
+
+  Use hsv-combination or rgb-combination for taking convex combinations
+  in the respective color space.  Note that in the HSV space, you need
+  to specify the direction on the color wheel, the default is positive.
+
+
+4 Example session
+═════════════════
+
+  ┌────
+  │ 
+  │ CL-COLORS> +blue+
+  │ #<RGB red: 0.0d0  green: 0.0d0  blue: 1.0d0>
+  │ 
+  │ CL-COLORS> (ad-hsv +blue+)
+  │ #<HSV hue: 240.0d0  saturation: 1.0d0  value: 1.0d0>
+  │ 
+  │ CL-COLORS> (rgb-combination +blue+ +green+ 0.5)
+  │ #<RGB red: 0.0d0  green: 0.5d0  blue: 0.5d0>
+  │ 
+  │ CL-COLORS> (as-rgb (hsv-combination (as-hsv* +blue+) (as-hsv* +green+) 0.5))
+  │ #<RGB red: 1.0d0  green: 0.0d0  blue: 0.0d0>
+  │ 
+  │ CL-COLORS> (as-rgb (hsv-combination (as-hsv* +blue+) (as-hsv* +green+) 0.5 nil))
+  │ #<RGB red: 0.0d0  green: 1.0d0  blue: 1.0d0>
+  │ 
+  └────
