@@ -1,0 +1,71 @@
+# Shout! Rules Configuration
+#
+# Rules are evaluated in order. The first matching FOR clause wins.
+# Within a FOR clause, the first matching WHEN clause wins.
+#
+# FOR conditions:
+#   "*"           - matches all topics
+#   "my-pipeline" - exact match
+#   "shield-*"    - glob pattern (*, ?, [abc])
+#   "re:^prod-.*" - regex (prefix with "re:")
+#
+# WHEN conditions use expr syntax (https://expr-lang.org):
+#   "*"           - always matches
+#   Available variables: topic, ok, status, weekday (mon-sun), time (HH:MM), hour, minute
+#
+# Template strings use Go text/template syntax:
+#   {{ .topic }}  {{ .status }}  {{ .message }}  {{ .link }}  {{ .ok }}
+#   {{ .meta.KEY }}  {{ .vars.NAME }}
+#   {{ if .ok }}good{{ else }}danger{{ end }}
+#   {{ lookup .vars.webhooks .topic "default" }}
+
+vars:
+  webhook: "https://hooks.slack.com/services/T00/B00/xxx"
+
+  webhooks:
+    shield:  "https://hooks.slack.com/services/T00/B00/shield"
+    safe:    "https://hooks.slack.com/services/T00/B00/safe"
+    default: "https://hooks.slack.com/services/T00/B00/default"
+
+rules:
+  # Business hours notifications for a specific pipeline
+  - for: "critical-pipeline"
+    when:
+      - match: 'weekday in ["mon","tue","wed","thu","fri"] && time >= "08:00" && time <= "17:00"'
+        remind: 30m
+        do:
+          - slack:
+              webhook: "{{ .vars.webhook }}"
+              text:    "{{ .topic }} is {{ .status }}: {{ .message }}"
+              color:   "#ff0000"
+
+      - match: "*"
+        remind: 2h
+        do:
+          - slack:
+              webhook: "{{ .vars.webhook }}"
+              text:    "[after-hours] {{ .topic }} is {{ .status }}"
+              color:   "#ff9900"
+
+  # Glob match with map-based webhook lookup
+  - for: "shield-*"
+    when:
+      - match: "*"
+        do:
+          - slack:
+              webhook: '{{ lookup .vars.webhooks "shield" "default" }}'
+              text:    "{{ .topic }} is {{ .status }}"
+              color:   '{{ if .ok }}good{{ else }}danger{{ end }}'
+              attach:  '{{ if .link }}{{ .message }} <{{ .link }}>{{ else }}{{ .message }}{{ end }}'
+
+  # Catch-all with 24h reminders
+  - for: "*"
+    when:
+      - match: "*"
+        remind: 24h
+        do:
+          - slack:
+              webhook: "{{ .vars.webhook }}"
+              text:    "{{ .topic }} is {{ .status }}"
+              color:   '{{ if .ok }}good{{ else }}danger{{ end }}'
+              attach:  '{{ if .link }}{{ .message }} <{{ .link }}>{{ else }}{{ .message }}{{ end }}'

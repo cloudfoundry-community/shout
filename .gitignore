@@ -1,6 +1,8 @@
 *.db
 *.pid
 /shout
+/shout-linux-*
+/shout-darwin-*
 /docker/shout
 /build
 /coverage
