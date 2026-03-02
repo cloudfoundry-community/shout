@@ -297,7 +297,8 @@
       (round (* 1000 (/ (- (get-internal-real-time) t0) internal-time-units-per-second)))))
   (sb-ext:exit :code 0))
 
-(defun run-api (&key (port 7109) (ops-auth *default-auth*) (admin-auth *default-auth*))
+(defun run-api (&key (port 7109) (ops-auth *default-auth*) (admin-auth *default-auth*)
+                     tls-cert tls-key)
   ;; GET /info
   (handle-json "/info"
                `((version    . ,*release-version*)
@@ -386,11 +387,20 @@
                 (setf (return-code *reply*) 400)
                 (hunchentoot:abort-request-handler)))))
 
-  (hunchentoot:start (make-instance 'hunchentoot:easy-acceptor
-                       :port port
-                       :read-timeout 30
-                       :write-timeout 30
-                       :message-log-destination nil)))
+  (hunchentoot:start
+    (if (and tls-cert tls-key)
+      (make-instance 'hunchentoot:easy-ssl-acceptor
+        :port port
+        :ssl-certificate-file tls-cert
+        :ssl-privatekey-file tls-key
+        :read-timeout 30
+        :write-timeout 30
+        :message-log-destination nil)
+      (make-instance 'hunchentoot:easy-acceptor
+        :port port
+        :read-timeout 30
+        :write-timeout 30
+        :message-log-destination nil))))
 
 (defun scan (dbfile)
   (let ((t0 (get-internal-real-time)))
@@ -429,10 +439,16 @@
                  (dbfile *default-dbfile*)
                  (expiry *default-expiry*)
                  (ops-auth *default-auth*)
-                 (admin-auth *default-auth*))
+                 (admin-auth *default-auth*)
+                 tls-cert tls-key)
 
   (if (stringp port)
       (setf port (parse-integer port)))
+
+  (when (and tls-cert (not tls-key))
+    (error "SHOUT_TLS_CERT is set but SHOUT_TLS_KEY is missing"))
+  (when (and tls-key (not tls-cert))
+    (error "SHOUT_TLS_KEY is set but SHOUT_TLS_CERT is missing"))
 
   (setf *dbfile* dbfile)
   (setf *expiry* expiry)
@@ -460,8 +476,9 @@
                              (arg args :attach)
                              :color (arg args :color)))))))
 
-  (shout-log "startup" "binding *:~A" port)
-  (run-api :port port :ops-auth ops-auth :admin-auth admin-auth)
+  (shout-log "startup" "binding *:~A~A" port (if (and tls-cert tls-key) " (TLS)" ""))
+  (run-api :port port :ops-auth ops-auth :admin-auth admin-auth
+           :tls-cert tls-cert :tls-key tls-key)
 
   (shout-log "startup" "entering upkeep thread main loop")
   (loop until *shutdown* do

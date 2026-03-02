@@ -21,6 +21,8 @@
                    (pidfile           (env "SHOUT_PIDFILE"     *default-pidfile*))
                    (port              (env "SHOUT_PORT"        *default-port*))
                    (database-file     (env "SHOUT_DATABASE"    *default-database-file*))
+                   (tls-cert          (env "SHOUT_TLS_CERT"    nil))
+                   (tls-key           (env "SHOUT_TLS_KEY"     nil))
                    (ops-credentials   (env "SHOUT_OPS_CREDS"   (env "SHOUT_CREDS" *default-credentials*)))
                    (admin-credentials (env "SHOUT_ADMIN_CREDS" (env "SHOUT_CREDS" *default-credentials*))))
 
@@ -40,5 +42,7 @@
 
   (api:run :port       port
            :dbfile     database-file
+           :tls-cert   tls-cert
+           :tls-key    tls-key
            :ops-auth   (parse-creds ops-credentials)
            :admin-auth (parse-creds admin-credentials)))
