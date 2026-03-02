@@ -71,7 +71,7 @@
 
 (defun interpolate (s)
   (loop for n in '(:topic :status :message :link) do
-        (setf s (replace-all s (format nil "$~(~A~)" (symbol-name n)) (param n))))
+        (setf s (replace-all s (format nil "$~(~A~)" (symbol-name n)) (or (param n) ""))))
   (loop for pair in *metadata* do
         (setf s (replace-all s (format nil "$[~(~A~)]" (symbol-name (car pair))) (cdr pair))))
   s)

@@ -499,14 +499,17 @@
   (triggers "value is $[nonexistent]"
             "$[key] left as-is when metadata key doesn't exist"))
 
-(subtest "Missing parameter interpolation crashes"
-  ;; BUG: $topic in string without :topic param crashes in replace-all
-  ;; because (param :topic) returns nil and write-string expects a string
-  (is-error (try `((for *
-                     (when *
-                       (made-it "$topic")))))
-            'type-error
-            "$param placeholder without corresponding param raises type-error"))
+(subtest "Missing parameter interpolation"
+  ;; Missing params interpolate to empty string
+  (try `((for *
+           (when *
+             (made-it "$topic")))))
+  (triggers "" "Missing $topic interpolates to empty string")
+
+  (try `((for *
+           (when *
+             (made-it "status: $status")))))
+  (triggers "status: " "Missing $status interpolates to empty string in context"))
 
 (subtest "Invalid time unit in remind"
   ;; ecase in time-lapse rejects unknown units
