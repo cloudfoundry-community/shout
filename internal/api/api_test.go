@@ -352,6 +352,60 @@ func TestHandleEventTransitions(t *testing.T) {
 	}
 }
 
+func TestTLSConfigValidation(t *testing.T) {
+	handlers := notify.NewRegistry()
+
+	t.Run("cert without key errors", func(t *testing.T) {
+		cfg := Config{
+			DBPath:  filepath.Join(t.TempDir(), "test.db"),
+			TLSCert: "/tmp/fake-cert.pem",
+		}
+		_, err := New(cfg, handlers)
+		if err == nil {
+			t.Fatal("expected error when TLSCert set without TLSKey")
+		}
+		if got := err.Error(); got != "SHOUT_TLS_CERT is set but SHOUT_TLS_KEY is missing" {
+			t.Errorf("unexpected error: %s", got)
+		}
+	})
+
+	t.Run("key without cert errors", func(t *testing.T) {
+		cfg := Config{
+			DBPath: filepath.Join(t.TempDir(), "test.db"),
+			TLSKey: "/tmp/fake-key.pem",
+		}
+		_, err := New(cfg, handlers)
+		if err == nil {
+			t.Fatal("expected error when TLSKey set without TLSCert")
+		}
+		if got := err.Error(); got != "SHOUT_TLS_KEY is set but SHOUT_TLS_CERT is missing" {
+			t.Errorf("unexpected error: %s", got)
+		}
+	})
+
+	t.Run("neither set is ok", func(t *testing.T) {
+		cfg := Config{
+			DBPath: filepath.Join(t.TempDir(), "test.db"),
+		}
+		_, err := New(cfg, handlers)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("both set is ok", func(t *testing.T) {
+		cfg := Config{
+			DBPath:  filepath.Join(t.TempDir(), "test.db"),
+			TLSCert: "/tmp/fake-cert.pem",
+			TLSKey:  "/tmp/fake-key.pem",
+		}
+		_, err := New(cfg, handlers)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
 func TestSplitCreds(t *testing.T) {
 	tests := []struct {
 		input    string

@@ -27,6 +27,8 @@ type Config struct {
 	OpsCreds   string // "user:pass"
 	AdminCreds string // "user:pass"
 	Expiry     int64  // default state expiry in seconds (0 = no expiry)
+	TLSCert    string // path to TLS certificate file
+	TLSKey     string // path to TLS private key file
 }
 
 // Server is the Shout! HTTP API server.
@@ -43,6 +45,13 @@ type Server struct {
 
 // New creates a new API server.
 func New(cfg Config, handlers *notify.Registry) (*Server, error) {
+	if (cfg.TLSCert == "") != (cfg.TLSKey == "") {
+		if cfg.TLSCert == "" {
+			return nil, fmt.Errorf("SHOUT_TLS_KEY is set but SHOUT_TLS_CERT is missing")
+		}
+		return nil, fmt.Errorf("SHOUT_TLS_CERT is set but SHOUT_TLS_KEY is missing")
+	}
+
 	store := state.NewJSONFileStore(cfg.DBPath)
 	var opts []state.ManagerOption
 	if cfg.Expiry > 0 {
@@ -82,7 +91,12 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.scanLoop(ctx)
 
 	addr := fmt.Sprintf(":%d", s.cfg.Port)
-	log.Printf("shout! v%s (%s) listening on %s", version.Version(), version.Release, addr)
+	tls := s.cfg.TLSCert != "" && s.cfg.TLSKey != ""
+	if tls {
+		log.Printf("shout! v%s (%s) listening on %s (TLS)", version.Version(), version.Release, addr)
+	} else {
+		log.Printf("shout! v%s (%s) listening on %s", version.Version(), version.Release, addr)
+	}
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -93,6 +107,9 @@ func (s *Server) Run(ctx context.Context) error {
 		<-ctx.Done()
 		_ = srv.Shutdown(context.Background())
 	}()
+	if tls {
+		return srv.ListenAndServeTLS(s.cfg.TLSCert, s.cfg.TLSKey)
+	}
 	return srv.ListenAndServe()
 }
 

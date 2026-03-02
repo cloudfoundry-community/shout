@@ -24,6 +24,8 @@ func main() {
 	flag.StringVar(&cfg.OpsCreds, "ops", envStr("SHOUT_OPS_AUTH", "shout:shout"), "ops credentials (user:pass)")
 	flag.StringVar(&cfg.AdminCreds, "admin", envStr("SHOUT_ADMIN_AUTH", "shout:shout"), "admin credentials (user:pass)")
 	flag.Int64Var(&cfg.Expiry, "expiry", int64(envInt("SHOUT_EXPIRY", 86400)), "state expiry in seconds (0=no expiry)")
+	flag.StringVar(&cfg.TLSCert, "tls-cert", envStr("SHOUT_TLS_CERT", ""), "path to TLS certificate file")
+	flag.StringVar(&cfg.TLSKey, "tls-key", envStr("SHOUT_TLS_KEY", ""), "path to TLS private key file")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 	flag.Parse()
 
