@@ -234,7 +234,7 @@
 (defun state-from-json (json)
   (make-instance 'state
                  :name             (jref json :name)
-                 :status           (jref json :status)
+                 :status           (jref json :state)
                  :last-notified-at (jref json :notified)
                  :remind-every     (jref json :reminder)
                  :previous-event   (event-from-json (jref json :previous))

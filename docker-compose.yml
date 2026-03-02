@@ -5,6 +5,8 @@ services:
       - "7100:7100"
     environment:
       SHOUT_DATABASE: /data/shout.db
+      SHOUT_OPS_CREDS: shouty:abouty
+      SHOUT_ADMIN_CREDS: admin:sadmin
     volumes:
       - shout-db:/data
     depends_on:
