@@ -392,4 +392,131 @@
   (triggers "ci/pipeline: now broken - build failed (http://ci/1)"
             "All four parameter placeholders interpolate"))
 
+(subtest "Sunday matches weekends"
+  ;; Sunday, Jan 5, 1997 at noon
+  (let ((rules::*NOW* (encode-universal-time 0 0 12 5 1 1997)))
+    (try `((for *
+             (when ((on weekends))
+               (made-it "weekend"))
+             (when *
+               (made-it "weekday")))))
+    (triggers "weekend" "Sunday matches (on weekends)")
+
+    (try `((for *
+             (when ((on sunday))
+               (made-it "sunday"))
+             (when *
+               (made-it "wrong")))))
+    (triggers "sunday" "Sunday matches (on sunday)")))
+
+(subtest "Multiple days in ON"
+  ;; Friday, Aug 29, 1997
+  (let ((rules::*NOW* (encode-universal-time 0 14 2 29 8 1997)))
+    (try `((for *
+             (when ((on monday wednesday friday))
+               (made-it "matched"))
+             (when *
+               (made-it "no match")))))
+    (triggers "matched" "Friday matches (on monday wednesday friday)")
+
+    (try `((for *
+             (when ((on monday wednesday))
+               (made-it "matched"))
+             (when *
+               (made-it "no match")))))
+    (triggers "no match" "Friday doesn't match (on monday wednesday)")))
+
+(subtest "Hours plural alias"
+  (is (cons :remind 7200) (try `((for * (when * (remind 2 hours)))))
+      "2 hours = 7200s"))
+
+(subtest "IS in WHEN condition"
+  (try `((for *
+           (when ((is "my-topic"))
+             (made-it "matched"))
+           (when *
+             (made-it "no match"))))
+       :params (pairlis '(:topic) '("my-topic")))
+  (triggers "matched" "(is \"my-topic\") matches topic in WHEN condition")
+
+  (try `((for *
+           (when ((is "other"))
+             (made-it "matched"))
+           (when *
+             (made-it "no match"))))
+       :params (pairlis '(:topic) '("my-topic")))
+  (triggers "no match" "(is \"other\") doesn't match topic in WHEN condition"))
+
+(subtest "FROM/TO boundary values"
+  ;; Exactly at start time: 8:00:00 AM, Jan 1, 1997
+  (let ((rules::*NOW* (encode-universal-time 0 0 8 1 1 1997)))
+    (try `((for *
+             (when ((from 0800 am to 0500 pm))
+               (made-it "in range"))
+             (when *
+               (made-it "out of range")))))
+    (triggers "in range" "Exact start time matches (>= boundary)"))
+
+  ;; Exactly at end time: 5:00:00 PM, Jan 1, 1997
+  (let ((rules::*NOW* (encode-universal-time 0 0 17 1 1 1997)))
+    (try `((for *
+             (when ((from 0800 am to 0500 pm))
+               (made-it "in range"))
+             (when *
+               (made-it "out of range")))))
+    (triggers "in range" "Exact end time matches (<= boundary)")))
+
+(subtest "All matching FOR blocks fire"
+  ;; Both FOR * blocks match — both execute, last one wins
+  (try `((for *
+           (when * (made-it "first")))
+         (for *
+           (when * (made-it "second")))))
+  (triggers "second" "All matching FOR blocks fire, not just the first"))
+
+(subtest "Multiple SET variables"
+  (try `((set x "hello")
+         (set y "world")
+         (for *
+           (when *
+             (made-it (concat (value x) (value y)))))))
+  (triggers (format nil "hello~%world~%")
+            "Multiple SET variables coexist and resolve independently"))
+
+(subtest "Concat strips nil elements"
+  ;; 'missing' symbol evaluates to nil (not in params), removed by concat
+  (try `((for *
+           (when *
+             (made-it (concat "hello" missing "world"))))))
+  (triggers (format nil "hello~%world~%")
+            "Concat strips nil values from output"))
+
+(subtest "Missing metadata interpolation left as-is"
+  ;; $[nonexistent] stays literal when metadata key doesn't exist
+  (try `((for *
+           (when *
+             (made-it "value is $[nonexistent]")))))
+  (triggers "value is $[nonexistent]"
+            "$[key] left as-is when metadata key doesn't exist"))
+
+(subtest "Missing parameter interpolation crashes"
+  ;; BUG: $topic in string without :topic param crashes in replace-all
+  ;; because (param :topic) returns nil and write-string expects a string
+  (is-error (try `((for *
+                     (when *
+                       (made-it "$topic")))))
+            'type-error
+            "$param placeholder without corresponding param raises type-error"))
+
+(subtest "Invalid time unit in remind"
+  ;; ecase in time-lapse rejects unknown units
+  (is-error (try `((for * (when * (remind 1 weeks)))))
+            'type-error
+            "Invalid time unit raises type-error from ecase"))
+
+(subtest "FOR with no WHEN clauses"
+  ;; Empty FOR body is a no-op
+  (is nil (try `((for *)))
+      "FOR with no WHEN clauses is a no-op returning nil"))
+
 (finalize)
