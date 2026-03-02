@@ -3,3 +3,4 @@
 (push (truename ".") asdf:*central-registry*)
 (require "prove")
 (prove:run :shout-test :reporter :list)
+(load "test/api-tests.lisp")

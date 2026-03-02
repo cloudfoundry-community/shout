@@ -381,7 +381,10 @@
             "Unterminated sexp raises error")
   (is-error (rules:load/rules "#<invalid>")
             'simple-error
-            "Invalid read syntax raises error"))
+            "Invalid read syntax raises error")
+  (is-error (rules:load/rules "#.(error \"injected\")")
+            'simple-error
+            "#. code injection is blocked by *read-eval*"))
 
 (subtest "String interpolation of all parameters"
   (try `((for *

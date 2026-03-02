@@ -59,6 +59,7 @@ shout: quicklisp libs
 	$(LISPEXEC) compile.lisp
 
 test: quicklisp libs
+	rm -rf $(HOME)/.cache/common-lisp/
 	$(LISPEXEC) test.lisp
 coverage: quicklisp libs
 	$(LISPEXEC) cover.lisp
