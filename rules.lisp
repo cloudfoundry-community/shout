@@ -160,12 +160,17 @@
                (t (find (weekday) (cdr expr)))))
 
         ((eq (car expr) 'from)
-         (let ((start (nthcdr 1 expr))
-               (stop  (nthcdr 4 expr)))
-           (and (>= (time-of-day)
-                    (hhmm-seconds (car start) (cadr start)))
-                (<= (time-of-day)
-                    (hhmm-seconds (car stop) (cadr stop))))))
+         (let ((start-secs (hhmm-seconds (cadr expr) (caddr expr)))
+               (stop-secs  (hhmm-seconds (car (nthcdr 4 expr))
+                                         (cadr (nthcdr 4 expr))))
+               (now-secs   (time-of-day)))
+           (if (<= start-secs stop-secs)
+               ;; same-day window: start <= now <= stop
+               (and (>= now-secs start-secs)
+                    (<= now-secs stop-secs))
+               ;; overnight window: now >= start OR now <= stop
+               (or (>= now-secs start-secs)
+                   (<= now-secs stop-secs)))))
 
         ((eq (car expr) 'after)
          (> (time-of-day)

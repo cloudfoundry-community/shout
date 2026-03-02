@@ -466,6 +466,35 @@
                (made-it "out of range")))))
     (triggers "in range" "Exact end time matches (<= boundary)")))
 
+(subtest "Overnight time window"
+  ;; (from 1100 pm to 0200 am) wraps past midnight
+  (let ((ruleset
+          `((for *
+              (when ((from 1100 pm to 0200 am))
+                (made-it "in range"))
+              (when *
+                (made-it "out of range"))))))
+
+    ;; 11:30 PM — inside the window
+    (let ((rules::*NOW* (encode-universal-time 0 30 23 1 1 1997)))
+      (try ruleset)
+      (triggers "in range" "11:30 PM is inside overnight window"))
+
+    ;; 1:00 AM — inside the window (past midnight)
+    (let ((rules::*NOW* (encode-universal-time 0 0 1 1 1 1997)))
+      (try ruleset)
+      (triggers "in range" "1:00 AM is inside overnight window"))
+
+    ;; 3:00 AM — outside the window
+    (let ((rules::*NOW* (encode-universal-time 0 0 3 1 1 1997)))
+      (try ruleset)
+      (triggers "out of range" "3:00 AM is outside overnight window"))
+
+    ;; 10:00 PM — outside the window
+    (let ((rules::*NOW* (encode-universal-time 0 0 22 1 1 1997)))
+      (try ruleset)
+      (triggers "out of range" "10:00 PM is outside overnight window"))))
+
 (subtest "All matching FOR blocks fire"
   ;; Both FOR * blocks match — both execute, last one wins
   (try `((for *
