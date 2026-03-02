@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -83,10 +84,14 @@ func (s *Server) Run(ctx context.Context) error {
 	addr := fmt.Sprintf(":%d", s.cfg.Port)
 	log.Printf("shout! v%s (%s) listening on %s", version.Version, version.Release, addr)
 
-	srv := &http.Server{Addr: addr, Handler: s.mux}
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           s.mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 	go func() {
 		<-ctx.Done()
-		srv.Shutdown(context.Background())
+		_ = srv.Shutdown(context.Background())
 	}()
 	return srv.ListenAndServe()
 }
@@ -98,7 +103,7 @@ func (s *Server) scanLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			s.states.Save()
+			_ = s.states.Save()
 			return
 		case <-ticker.C:
 			s.states.Expire()
@@ -114,7 +119,7 @@ func (s *Server) scanLoop(ctx context.Context) {
 }
 
 func (s *Server) loadRulesFromFile(path string) error {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		return fmt.Errorf("reading rules file: %w", err)
 	}
@@ -244,7 +249,7 @@ func (s *Server) handleGetRules(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/x-yaml")
 	w.WriteHeader(http.StatusOK)
-	w.Write(src)
+	_, _ = w.Write(src)
 }
 
 func (s *Server) handlePostRules(w http.ResponseWriter, r *http.Request) {
@@ -302,7 +307,7 @@ func splitCreds(creds string) [2]string {
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func readBody(r *http.Request) ([]byte, error) {
