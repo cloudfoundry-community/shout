@@ -2,7 +2,7 @@ services:
   shout:
     build:
       context: .
-      dockerfile: Dockerfile.go
+      dockerfile: Dockerfile-go
     command:
       - --port=7109
       - --db=/data/shout.db
@@ -39,7 +39,7 @@ services:
   test-client:
     build:
       context: ./test-client
-      dockerfile: Dockerfile.go
+      dockerfile: Dockerfile-go
     depends_on:
       shout:
         condition: service_healthy
