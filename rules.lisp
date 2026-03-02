@@ -24,7 +24,7 @@
 
 (defun hhmm-seconds (hhmm meridian)
   (+ (* 60 (+ (mod hhmm 100)
-              (* 60 (floor (/ hhmm 100)))))
+              (* 60 (mod (floor (/ hhmm 100)) 12))))
      (cond ((eq meridian 'am) 0)
            ((eq meridian 'pm) 43200)
            (t (error "invalid meridian ~A" meridian)))))

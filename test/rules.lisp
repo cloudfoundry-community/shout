@@ -466,6 +466,34 @@
                (made-it "out of range")))))
     (triggers "in range" "Exact end time matches (<= boundary)")))
 
+(subtest "12-hour clock edge cases"
+  ;; 12:30 AM = 00:30 = 1800 seconds
+  (let ((rules::*NOW* (encode-universal-time 0 30 0 1 1 1997)))
+    (try `((for *
+             (when ((after 1200 am))
+               (made-it "after midnight"))
+             (when *
+               (made-it "wrong")))))
+    (triggers "after midnight" "12:00 AM is midnight, 00:30 is after it"))
+
+  ;; 12:30 PM = 12:30 = 45000 seconds
+  (let ((rules::*NOW* (encode-universal-time 0 30 12 1 1 1997)))
+    (try `((for *
+             (when ((after 1200 pm))
+               (made-it "after noon"))
+             (when *
+               (made-it "wrong")))))
+    (triggers "after noon" "12:00 PM is noon, 12:30 is after it"))
+
+  ;; 11:59 AM should be before 12:00 PM (noon)
+  (let ((rules::*NOW* (encode-universal-time 0 59 11 1 1 1997)))
+    (try `((for *
+             (when ((before 1200 pm))
+               (made-it "before noon"))
+             (when *
+               (made-it "wrong")))))
+    (triggers "before noon" "11:59 AM is before 12:00 PM")))
+
 (subtest "Overnight time window"
   ;; (from 1100 pm to 0200 am) wraps past midnight
   (let ((ruleset
