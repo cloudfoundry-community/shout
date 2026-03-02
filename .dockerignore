@@ -2,3 +2,8 @@
 !/Makefile
 !*.lisp
 !*.asd
+!go.mod
+!go.sum
+!cmd/
+!internal/
+!pkg/

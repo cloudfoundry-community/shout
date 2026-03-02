@@ -166,9 +166,9 @@ assert_eq "announcement notification" "1" "$count"
 
 # ── Test 12: Auth required (401 without creds) ──────────────────
 bold "Test 12: Auth required"
-status=$(curl -sf -o /dev/null -w '%{http_code}' -X POST "$SHOUT_URL/events" \
+status=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$SHOUT_URL/events" \
   -H "Content-Type: application/json" \
-  -d '{"topic":"unauth","ok":true}' 2>/dev/null || echo "401")
+  -d '{"topic":"unauth","ok":true}')
 assert_eq "401 without credentials" "401" "$status"
 
 # ── Summary ─────────────────────────────────────────────────────
