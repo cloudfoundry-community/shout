@@ -28,7 +28,11 @@ func main() {
 	flag.Parse()
 
 	if showVersion {
-		fmt.Printf("shout v%s (%s)\n", version.Version, version.Release)
+		fmt.Printf("shout v%s (%s)\n", version.Version(), version.Release)
+		if version.BuildDate != "" {
+			fmt.Printf("  built:  %s\n", version.BuildDate)
+			fmt.Printf("  commit: %s (%s)\n", version.BuildVcsId, version.BuildVcsIdDate)
+		}
 		os.Exit(0)
 	}
 

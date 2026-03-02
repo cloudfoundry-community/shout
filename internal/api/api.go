@@ -82,7 +82,7 @@ func (s *Server) Run(ctx context.Context) error {
 	go s.scanLoop(ctx)
 
 	addr := fmt.Sprintf(":%d", s.cfg.Port)
-	log.Printf("shout! v%s (%s) listening on %s", version.Version, version.Release, addr)
+	log.Printf("shout! v%s (%s) listening on %s", version.Version(), version.Release, addr)
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -174,7 +174,7 @@ func (s *Server) fireRules(evt *state.Event, status string) {
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
-		"version": version.Version,
+		"version": version.Version(),
 		"release": version.Release,
 	})
 }
