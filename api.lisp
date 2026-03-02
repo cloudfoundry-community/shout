@@ -12,10 +12,20 @@
 (defun unix-now ()
   (- (get-universal-time) *EPOCH*))
 
+(defun shout-log (prefix fmt &rest args)
+  (multiple-value-bind (s m h d mo y) (decode-universal-time (get-universal-time))
+    (format *error-output* "~4D-~2,'0D-~2,'0DT~2,'0D:~2,'0D:~2,'0D [~A] ~?~%"
+            y mo d h m s prefix fmt args)))
+
 (defvar *states* '())
 (defvar *states-lock* (make-lock "states"))
 (defvar *rules* '())
 (defvar *rules-src* "")
+(defvar *rules-lock* (make-lock "rules"))
+(defvar *expiry* nil)
+(defvar *dbfile* nil)
+(defvar *shutdown* nil)
+(defvar *states-dirty* nil)
 
 (defclass event ()
   ((message
@@ -81,36 +91,38 @@
 
 (defun notify-about-state (state event mode edge)
   (handler-case
-    (let ((result (rules:eval/rules *rules*
-                    (pairlis
-                      '(:topic :ok? :status :last-notified :message :link)
-                      (list
-                        (topic state)
-                        (event-ok? event)
-                        (format nil "~A ~A" mode edge)
-                        (last-notified-at state)
-                        (event-message event)
-                        (if (equal (event-link event) "")
-                          nil
-                          (event-link event))))
-                    (event-metadata event))))
+    (let ((result (with-lock-held (*rules-lock*)
+                    (rules:eval/rules *rules*
+                      (pairlis
+                        '(:topic :ok? :status :last-notified :message :link)
+                        (list
+                          (topic state)
+                          (event-ok? event)
+                          (format nil "~A ~A" mode edge)
+                          (last-notified-at state)
+                          (event-message event)
+                          (if (equal (event-link event) "")
+                            nil
+                            (event-link event))))
+                      (event-metadata event)))))
       (setf (last-notified-at state) (unix-now))
       (setf (remind-every state)
             (if (and result (eq (car result) :remind))
               (cdr result))))
     (error (e)
-      (format *error-output* "[notify] error notifying about ~A: ~A~%" (topic state) e))))
+      (shout-log "notify" "error notifying about ~A: ~A" (topic state) e))))
 
 (defun notify-announcement (topic event)
-  (rules:eval/rules *rules*
-    (pairlis
-      '(:announcement? :topic :ok? :status :message :link)
-      (list t topic t "worth looking into..."
-            (event-message event)
-            (if (equal (event-link event) "")
-                nil
-                (event-link event))))
-    (event-metadata event)))
+  (with-lock-held (*rules-lock*)
+    (rules:eval/rules *rules*
+      (pairlis
+        '(:announcement? :topic :ok? :status :message :link)
+        (list t topic t "worth looking into..."
+              (event-message event)
+              (if (equal (event-link event) "")
+                  nil
+                  (event-link event))))
+      (event-metadata event))))
 
 (defun trigger-edge (state event type)
   (notify-about-state state event "now" type))
@@ -152,6 +164,7 @@
 
 (defun set-state (topic event)
   (let ((state (find-state topic)))
+    (setf *states-dirty* t)
     (if state
       (ingest-event state event)
       (add-state topic event))))
@@ -251,6 +264,20 @@
                                        (state-json (cdr pair))) db))))
     (rename-file tmp path)))
 
+(defun handle-sigterm (sig code scp)
+  (declare (ignore sig code scp))
+  (let ((t0 (get-internal-real-time)))
+    (shout-log "shutdown" "received SIGTERM, flushing database")
+    (handler-case
+      (with-lock-held (*states-lock*)
+        (when *dbfile*
+          (write-database *dbfile* *states*)))
+      (error (e)
+        (shout-log "shutdown" "error flushing database: ~A" e)))
+    (shout-log "shutdown" "graceful shutdown complete (~Dms)"
+      (round (* 1000 (/ (- (get-internal-real-time) t0) internal-time-units-per-second)))))
+  (sb-ext:exit :code 0))
+
 (defun run-api (&key (port 7109) (ops-auth *default-auth*) (admin-auth *default-auth*))
   ;; GET /info
   (handle-json "/info"
@@ -320,8 +347,9 @@
                 (let ((rules-src (raw-post-data :force-text t)))
                   (handler-case
                     (let ((parsed (rules:load/rules rules-src)))
-                      (setf *rules* parsed)
-                      (setf *rules-src* rules-src)
+                      (with-lock-held (*rules-lock*)
+                        (setf *rules* parsed)
+                        (setf *rules-src* rules-src))
                       (setf (content-type* *reply*) "application/json")
                       (format nil "~A~%" (json:encode-json-to-string '((ok . "rules updated")))))
                     (error (e)
@@ -329,7 +357,7 @@
                       (setf (content-type* *reply*) "application/json")
                       (format nil "~A~%" (json:encode-json-to-string
                                            `((error . ,(format nil "~A" e)))))))))
-              (:get  *rules-src*)
+              (:get  (with-lock-held (*rules-lock*) *rules-src*))
               (otherwise
                 (setf (return-code *reply*) 400)
                 (hunchentoot:abort-request-handler)))))
@@ -337,16 +365,37 @@
   (hunchentoot:start (make-instance 'hunchentoot:easy-acceptor :port port)))
 
 (defun scan (dbfile)
-  (handler-case
-    (with-lock-held (*states-lock*)
-      (write-database dbfile *states*)
-      (loop for pair in *states*
-            do (let ((state (cdr pair)))
-                 (when (state-needs-reminder? state)
-                   (notify-about-state
-                     state (last-event state) "still" (status-of state))))))
-    (error (e)
-      (format *error-output* "[scan] error during scan cycle: ~A~%" e))))
+  (let ((t0 (get-internal-real-time)))
+    (handler-case
+      (with-lock-held (*states-lock*)
+        (when *states-dirty*
+          (let ((tw (get-internal-real-time)))
+            (write-database dbfile *states*)
+            (shout-log "scan" "database written (~Dms)"
+              (round (* 1000 (/ (- (get-internal-real-time) tw) internal-time-units-per-second)))))
+          (setf *states-dirty* nil))
+        (when *expiry*
+          (let ((cutoff (- (unix-now) *expiry*)))
+            (let ((expired (remove-if-not
+                             (lambda (pair)
+                               (< (event-occurred-at (last-event (cdr pair))) cutoff))
+                             *states*)))
+              (when expired
+                (setf *states* (remove-if
+                                 (lambda (pair)
+                                   (< (event-occurred-at (last-event (cdr pair))) cutoff))
+                                 *states*))
+                (setf *states-dirty* t)
+                (shout-log "scan" "expired ~D stale state~:P" (length expired))))))
+        (loop for pair in *states*
+              do (let ((state (cdr pair)))
+                   (when (state-needs-reminder? state)
+                     (notify-about-state
+                       state (last-event state) "still" (status-of state))))))
+      (error (e)
+        (shout-log "scan" "error during scan cycle: ~A" e)))
+    (shout-log "scan" "cycle complete (~Dms)"
+      (round (* 1000 (/ (- (get-internal-real-time) t0) internal-time-units-per-second))))))
 
 (defun run (&key (port *default-port*)
                  (dbfile *default-dbfile*)
@@ -357,10 +406,19 @@
   (if (stringp port)
       (setf port (parse-integer port)))
 
-  (format t "reading database from file ~A~%" dbfile)
-  (setf *states* (read-database dbfile))
+  (setf *dbfile* dbfile)
+  (setf *expiry* expiry)
 
-  (format t "registering notification plugins...~%")
+  (shout-log "startup" "registering SIGTERM handler")
+  (sb-sys:enable-interrupt sb-posix:sigterm #'handle-sigterm)
+
+  (shout-log "startup" "reading database from ~A" dbfile)
+  (let ((t0 (get-internal-real-time)))
+    (setf *states* (read-database dbfile))
+    (shout-log "startup" "database loaded (~Dms)"
+      (round (* 1000 (/ (- (get-internal-real-time) t0) internal-time-units-per-second)))))
+
+  (shout-log "startup" "registering notification plugins")
   (labels ((arg (args name)
              (nth (+ 1 (position name args)) args)))
     (rules:register-plugin
@@ -374,10 +432,10 @@
                              (arg args :attach)
                              :color (arg args :color)))))))
 
-  (format t "binding *:~A~%" port)
+  (shout-log "startup" "binding *:~A" port)
   (run-api :port port :ops-auth ops-auth :admin-auth admin-auth)
 
-  (format t "entering upkeep thread main loop...~%")
-  (loop
+  (shout-log "startup" "entering upkeep thread main loop")
+  (loop until *shutdown* do
     (scan dbfile)
-    (sleep 60)))
+    (sleep 5)))

@@ -18,17 +18,21 @@
                        (webhook  (env "SHOUT_WEBHOOK" ""))
                        (attachments nil))
   (when (equal webhook "")
-    (format *error-output* "[slack] no webhook configured, skipping notification~%")
+    (api:shout-log "slack" "no webhook configured, skipping notification")
     (return-from send nil))
   (handler-case
-    (drakma:http-request webhook
-                         :method :post
-                         :content (json:encode-json-to-string
-                                    `((text . ,text)
-                                      (username . ,username)
-                                      (icon_url . ,icon)
-                                      (attachments . ,attachments))))
+    (let ((t0 (get-internal-real-time)))
+      (prog1
+        (drakma:http-request webhook
+                             :method :post
+                             :content (json:encode-json-to-string
+                                        `((text . ,text)
+                                          (username . ,username)
+                                          (icon_url . ,icon)
+                                          (attachments . ,attachments))))
+        (api:shout-log "slack" "notification sent (~Dms)"
+          (round (* 1000 (/ (- (get-internal-real-time) t0) internal-time-units-per-second))))))
     (error (e)
-      (format *error-output* "[slack] failed to send notification: ~A~%" e)
+      (api:shout-log "slack" "failed to send notification: ~A" e)
       nil)))
 

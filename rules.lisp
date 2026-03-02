@@ -253,7 +253,8 @@
     *reminder*))
 
 (defun load/rules (str)
-  (let ((*package* (find-package "RULES")))
+  (let ((*read-eval* nil)
+        (*package* (find-package "RULES")))
     (handler-case
       (read-from-string str)
       (error (e)

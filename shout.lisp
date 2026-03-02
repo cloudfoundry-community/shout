@@ -35,7 +35,8 @@
       (format t "      ## ##     ## ##     ## ##     ##    ##         ~%")
       (format t "##    ## ##     ## ##     ## ##     ##    ##    #### ~%")
       (format t " ######  ##     ##  #######   #######     ##    #### ~%")
-      (format t "starting up...~%")))
+      (api:shout-log "startup" "starting up...")))
+
 
   (api:run :port       port
            :dbfile     database-file

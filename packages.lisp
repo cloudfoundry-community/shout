@@ -25,4 +25,5 @@
                 :make-lock
                 :with-lock-held)
   (:export :run
-           :scan))
+           :scan
+           :shout-log))
