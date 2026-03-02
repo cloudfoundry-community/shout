@@ -48,9 +48,11 @@
     :initarg :status
     :accessor status-of)
    (last-notified-at
+    :initarg :last-notified-at
     :initform nil
     :accessor last-notified-at)
    (remind-every
+    :initarg :remind-every
     :initform nil
     :accessor remind-every)
    (previous-event

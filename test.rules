@@ -1,0 +1,12 @@
+; vim:ft=lisp:et
+; Test rules for docker compose environment.
+; Sends all notifications to the mock-slack service.
+((for *
+      (when *
+        (remind 5 minutes)
+        (slack :webhook "http://mock-slack:8080/"
+               :text "$topic is $status"
+               :color (if ok? "good" "danger")
+               :attach (if link
+                           "$message <$link>"
+                           "$message")))))
