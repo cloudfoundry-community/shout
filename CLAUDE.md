@@ -59,14 +59,15 @@ Events carry a `topic`, `ok` status, `message`, `link`, and optional metadata. T
 ### Rules DSL
 
 The rules engine (`shout/rules.lisp`) implements a Lisp-like DSL with:
-- Topic matching: literal strings, `*` wildcard, `(~ "glob*")`, `(re "regex")`
+- Topic matching: literal strings, `*` wildcard, `(is "exact")`, `(matches "regex")` (cl-ppcre)
 - Time conditions: `(on weekdays)`, `(from 0800 am to 0500 pm)`, `(after ...)`, `(before ...)`
 - Logic: `and`, `or`, `not`, `if`
 - Variables: `set`/`value`/`lookup` with map support
 - Handlers: `slack` (extensible via `register-plugin`)
 - String interpolation: `$topic`, `$status`, `$message`, `$link`, `$[metadata-key]`
+- **Deprecated**: `concat` appends a trailing newline after each element; this will change in a future major release
 
-FOR clauses match topics; WHEN clauses match time conditions. Both use first-match-wins semantics.
+All matching FOR blocks fire (not first-match-wins) — this allows multiple notification channels for one topic. WHEN clauses within a FOR use first-match-wins semantics.
 
 ### Authentication
 

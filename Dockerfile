@@ -1,4 +1,5 @@
-FROM --platform=linux/amd64 genesiscommunity/concourse-cl:ubuntu-jammy
+ARG TARGETPLATFORM=linux/amd64
+FROM --platform=${TARGETPLATFORM} genesiscommunity/concourse-cl:ubuntu-jammy
 WORKDIR /cl
 ENV BUILD=/lib/cl
 ENV CL_SOURCE_REGISTRY=/cl

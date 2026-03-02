@@ -447,6 +447,38 @@
        :params (pairlis '(:topic) '("my-topic")))
   (triggers "no match" "(is \"other\") doesn't match topic in WHEN condition"))
 
+(subtest "Regex matching with MATCHES"
+  ;; (matches "regex") checks topic against a regex pattern
+  (try `((for *
+           (when ((matches "ci/.*"))
+             (made-it "matched"))
+           (when *
+             (made-it "no match"))))
+       :params (pairlis '(:topic) '("ci/pipeline")))
+  (triggers "matched" "(matches \"ci/.*\") matches topic ci/pipeline")
+
+  (try `((for *
+           (when ((matches "^deploy/"))
+             (made-it "matched"))
+           (when *
+             (made-it "no match"))))
+       :params (pairlis '(:topic) '("ci/pipeline")))
+  (triggers "no match" "(matches \"^deploy/\") doesn't match ci/pipeline")
+
+  ;; matches in FOR topic position (single FOR to avoid all-fire overwrite)
+  (try `((for (matches "ci/.*")
+           (when * (made-it "matched"))))
+       :params (pairlis '(:topic) '("ci/deploy")))
+  (triggers "matched" "(matches ...) works in FOR topic position")
+
+  ;; matches with no topic param
+  (try `((for *
+           (when ((matches "anything"))
+             (made-it "matched"))
+           (when *
+             (made-it "no match")))))
+  (triggers "no match" "(matches ...) with missing topic doesn't crash"))
+
 (subtest "FROM/TO boundary values"
   ;; Exactly at start time: 8:00:00 AM, Jan 1, 1997
   (let ((rules::*NOW* (encode-universal-time 0 0 8 1 1 1997)))

@@ -19,5 +19,6 @@
   :depends-on (#:hunchentoot
                #:drakma
                #:cl-json
+               #:cl-ppcre
                #:daemon
                #:bordeaux-threads))

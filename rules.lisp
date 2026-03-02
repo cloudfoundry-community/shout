@@ -140,8 +140,8 @@
                  (t nil)))
 
         ((eq (car expr) 'matches)
-           ;; FIXME : implement cl-ppcre and regex
-           nil)
+           (cl-ppcre:scan (-eval/expr (cadr expr))
+                          (or (param :topic) "")))
 
         ((eq (car expr) 'is)
            (equal (param :topic)
