@@ -115,4 +115,14 @@
             api::*states-dirty* saved-dirty)
       (ignore-errors (delete-file tmpfile)))))
 
+(subtest "TLS config validation — cert without key errors"
+  (is-error (api:run :tls-cert "/tmp/fake-cert.pem")
+            'simple-error
+            "tls-cert without tls-key should signal an error"))
+
+(subtest "TLS config validation — key without cert errors"
+  (is-error (api:run :tls-key "/tmp/fake-key.pem")
+            'simple-error
+            "tls-key without tls-cert should signal an error"))
+
 (finalize)
