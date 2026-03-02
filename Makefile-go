@@ -6,7 +6,15 @@ default: build
 build:
 	go build -ldflags="$(LDFLAGS)" -o $(NAME) ./cmd/shout
 
-test:
+fmt:
+	go fmt ./...
+
+vet:
+	go vet ./...
+
+check: fmt vet
+
+test: check
 	go test -race ./cmd/... ./internal/... ./pkg/...
 
 coverage:
@@ -58,6 +66,38 @@ darwin-arm64:
 
 all-platforms: linux-amd64 linux-arm64 darwin-amd64 darwin-arm64
 
-.PHONY: default build test clean coverage coverage-html coverage-check \
+help:
+	@echo "Usage: make -f Makefile-go <target>"
+	@echo ""
+	@echo "Build:"
+	@echo "  build            Build the shout binary (default)"
+	@echo "  clean            Remove build artifacts and coverage files"
+	@echo ""
+	@echo "Quality:"
+	@echo "  fmt              Run go fmt on all packages"
+	@echo "  vet              Run go vet on all packages"
+	@echo "  check            Run fmt + vet"
+	@echo "  test             Run tests with race detection (runs check first)"
+	@echo ""
+	@echo "Coverage:"
+	@echo "  coverage         Run tests and print coverage by function"
+	@echo "  coverage-html    Generate HTML coverage report"
+	@echo "  coverage-check   Verify coverage meets 50% threshold"
+	@echo ""
+	@echo "Security:"
+	@echo "  gosec            Run gosec static analysis"
+	@echo "  govulncheck      Run Go vulnerability checker"
+	@echo "  trivy            Run Trivy filesystem scan"
+	@echo "  trivy-image      Run Trivy on the shout:latest Docker image"
+	@echo "  security         Run gosec + govulncheck + trivy"
+	@echo ""
+	@echo "Cross-compilation:"
+	@echo "  linux-amd64      Build for linux/amd64"
+	@echo "  linux-arm64      Build for linux/arm64"
+	@echo "  darwin-amd64     Build for darwin/amd64"
+	@echo "  darwin-arm64     Build for darwin/arm64"
+	@echo "  all-platforms    Build all platform variants"
+
+.PHONY: default build fmt vet check test clean coverage coverage-html coverage-check \
 	gosec govulncheck trivy trivy-image security \
-	linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 all-platforms
+	linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 all-platforms help

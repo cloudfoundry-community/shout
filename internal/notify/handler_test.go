@@ -10,7 +10,7 @@ type fakeHandler struct {
 	name string
 }
 
-func (f *fakeHandler) Name() string                                     { return f.name }
+func (f *fakeHandler) Name() string                                      { return f.name }
 func (f *fakeHandler) Send(_ context.Context, _ map[string]string) error { return nil }
 
 func TestRegistryRegisterAndGet(t *testing.T) {

@@ -20,8 +20,8 @@ type RulesConfig struct {
 
 // RuleDef is a single FOR clause with its WHEN clauses.
 type RuleDef struct {
-	For  string     `yaml:"for"`
-	When []WhenDef  `yaml:"when"`
+	For  string    `yaml:"for"`
+	When []WhenDef `yaml:"when"`
 }
 
 // WhenDef is a single WHEN clause with its match condition and actions.
@@ -68,13 +68,13 @@ type globMatcher struct{ pattern string }
 type regexMatcher struct{ re *regexp.Regexp }
 type exprMatcher struct{ program *vm.Program }
 
-func (wildcardMatcher) match(string) bool            { return true }
-func (m literalMatcher) match(topic string) bool      { return m.value == topic }
+func (wildcardMatcher) match(string) bool        { return true }
+func (m literalMatcher) match(topic string) bool { return m.value == topic }
 func (m globMatcher) match(topic string) bool {
 	ok, _ := filepath.Match(m.pattern, topic)
 	return ok
 }
-func (m regexMatcher) match(topic string) bool        { return m.re.MatchString(topic) }
+func (m regexMatcher) match(topic string) bool { return m.re.MatchString(topic) }
 func (m exprMatcher) match(topic string) bool {
 	env := ExprEnv{Topic: topic}
 	out, err := expr.Run(m.program, env)
