@@ -4,3 +4,4 @@
 /docker/shout
 /build
 /coverage
+/version.lisp

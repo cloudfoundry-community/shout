@@ -1,8 +1,16 @@
 #!/bin/bash
 VERSION=${1:-${VERSION:-(development)}}
-RELEASE=${2:-"Unspoken"}
+RELEASE=${2:-"Whisper"}
+BUILD_DATE=${BUILD_DATE:-$(date -u -Iseconds)}
+BUILD_VCS_ID=${BUILD_VCS_ID:-$(git log -n 1 --format="%h" 2>/dev/null || echo "unknown")}
 cat > version.lisp <<EOF
 (in-package :api)
+(defvar *semver-major* "0")
+(defvar *semver-minor* "0")
+(defvar *semver-patch* "0")
+(defvar *semver-prerelease* "")
 (defvar *release-version* "$VERSION")
 (defvar *release-name*    "$RELEASE")
+(defvar *build-date*      "$BUILD_DATE")
+(defvar *build-vcs-id*    "$BUILD_VCS_ID")
 EOF

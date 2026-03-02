@@ -20,11 +20,18 @@
   (when (equal webhook "")
     (api:shout-log "slack" "no webhook configured, skipping notification")
     (return-from send nil))
+  (unless (or (and (>= (length webhook) 8)
+                   (string= "https://" webhook :end2 8))
+              (and (>= (length webhook) 7)
+                   (string= "http://" webhook :end2 7)))
+    (api:shout-log "slack" "invalid webhook URL scheme, skipping")
+    (return-from send nil))
   (handler-case
     (let ((t0 (get-internal-real-time)))
       (prog1
         (drakma:http-request webhook
                              :method :post
+                             :connection-timeout 30
                              :content (json:encode-json-to-string
                                         `((text . ,text)
                                           (username . ,username)

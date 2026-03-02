@@ -4,8 +4,19 @@ Thank you for your interest in contributing to Shout!
 
 ## Prerequisites
 
+### Common Lisp (develop branch)
+
+- [SBCL](http://www.sbcl.org/) built with `--fancy` (or Roswell/Homebrew SBCL)
+- GNU Make
+
+### Go rewrite (norm/go-shout branch)
+
 - [Go 1.26+](https://go.dev/dl/)
 - GNU Make
+
+> **Note:** The Go rewrite is the future direction for Shout! New features should
+> target the Go codebase. The Lisp codebase on `develop` receives security fixes
+> and maintenance only.
 
 ## Getting Started
 
@@ -22,7 +33,22 @@ Thank you for your interest in contributing to Shout!
 
 ## Development Workflow
 
-Build and test using the Go Makefile:
+### Common Lisp (develop branch)
+
+```bash
+make quicklisp    # Set up Quicklisp (uses vendored deps if available)
+make libs         # Install Lisp dependencies
+make shout        # Build standalone executable
+make test         # Run test suite (prove framework)
+make coverage     # Generate coverage report
+```
+
+Run in development without compiling:
+```bash
+sbcl --script run.lisp
+```
+
+### Go rewrite (norm/go-shout branch)
 
 ```bash
 make -f Makefile-go build    # Build the binary
@@ -32,26 +58,23 @@ make -f Makefile-go coverage # Generate coverage report
 
 ### Code Quality
 
-All submissions must pass:
+All submissions must pass the relevant test suite:
 
-- `go fmt` — standard formatting
-- `go vet` — static analysis
-- `go test -race` — tests with race detection
-
-The `make -f Makefile-go test` target runs all three automatically.
+- **Lisp:** `make test`
+- **Go:** `make -f Makefile-go test` (runs `go fmt` + `go vet` + `go test -race`)
 
 ### Security Scanning
 
 ```bash
-make -f Makefile-go security  # Run gosec + govulncheck + trivy
+make -f Makefile-go security  # Run gosec + govulncheck + trivy (Go only)
 ```
 
 ## Submitting Changes
 
-1. Ensure all tests pass: `make -f Makefile-go test`
+1. Ensure all tests pass for the branch you're targeting
 2. Commit your changes with a clear message describing the **why**
 3. Push to your fork: `git push origin my-new-feature`
-4. Open a Pull Request against the `main` branch
+4. Open a Pull Request against the appropriate branch (`develop` for Lisp, `main` for Go)
 
 ### Pull Request Guidelines
 
@@ -66,7 +89,7 @@ Open a [GitHub Issue](https://github.com/cloudfoundry-community/shout/issues) wi
 
 - Steps to reproduce
 - Expected vs actual behavior
-- Version information (`shout --version`)
+- Version information (`shout --version` or `GET /info`)
 
 ## Security Vulnerabilities
 

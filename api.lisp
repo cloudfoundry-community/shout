@@ -182,6 +182,13 @@
            (format nil "~A~%" (json:encode-json-to-string
                                 (progn ,@body)))))
 
+(defun constant-time-equal (a b)
+  "Constant-time string comparison to prevent timing attacks."
+  (and (= (length a) (length b))
+       (zerop (reduce #'logior
+                (map 'list (lambda (x y) (logxor (char-code x) (char-code y))) a b)
+                :initial-value 0))))
+
 (defmacro with-auth (auth &body body)
   (let ((got-user (gensym))
         (got-pass (gensym)))
@@ -189,13 +196,20 @@
     (hunchentoot:authorization)
     (cond ((or (null ,got-user) (null ,got-pass))
            (hunchentoot:require-authorization))
-          ((or (not (equal ,got-user (car ,auth)))
-               (not (equal ,got-pass (cdr ,auth))))
+          ((or (not (constant-time-equal ,got-user (car ,auth)))
+               (not (constant-time-equal ,got-pass (cdr ,auth))))
            (setf (return-code *reply*) 403)
            (hunchentoot:abort-request-handler))
           (t ,@body)))))
 
+(defvar *max-body-size* (* 1 1024 1024)) ;; 1MB
+
 (defun json-body ()
+  (let ((content-length (header-in* :content-length *request*)))
+    (when (and content-length
+               (> (parse-integer content-length :junk-allowed t) *max-body-size*))
+      (setf (return-code* *reply*) 413)
+      (hunchentoot:abort-request-handler)))
   (decode-json-from-string
     (raw-post-data :force-text t)))
 
@@ -258,11 +272,16 @@
 
 (defun write-database (path db)
   (let ((tmp (make-pathname :type "tmp" :defaults path)))
-    (with-open-file (out tmp :direction :output :if-exists :supersede)
-      (format out "~A~%" (json:encode-json-to-string
-                           (mapcar #'(lambda (pair)
-                                       (state-json (cdr pair))) db))))
-    (rename-file tmp path)))
+    (unwind-protect
+      (progn
+        (with-open-file (out tmp :direction :output :if-exists :supersede)
+          (format out "~A~%" (json:encode-json-to-string
+                               (mapcar #'(lambda (pair)
+                                           (state-json (cdr pair))) db))))
+        (rename-file tmp path)
+        (sb-posix:chmod (namestring (truename path)) #o600))
+      (when (probe-file tmp)
+        (ignore-errors (delete-file tmp))))))
 
 (defun handle-sigterm (sig code scp)
   (declare (ignore sig code scp))
@@ -281,8 +300,10 @@
 (defun run-api (&key (port 7109) (ops-auth *default-auth*) (admin-auth *default-auth*))
   ;; GET /info
   (handle-json "/info"
-               `((version . ,*release-version*)
-                 (release . ,*release-name*)))
+               `((version    . ,*release-version*)
+                 (release    . ,*release-name*)
+                 (build-date . ,*build-date*)
+                 (commit     . ,*build-vcs-id*)))
 
   ;; GET /state?topic=blah
   (handle-json "/state"
@@ -312,8 +333,9 @@
                            :occurred-at (or (jref b :occurred-at) (unix-now))))
                        `((ok . "Success!")))
                      (error (e)
+                       (shout-log "announcements" "error: ~A" e)
                        (setf (return-code* *reply*) 400)
-                       `((error . ,(format nil "~A" e)))))
+                       `((error . "invalid request"))))
                    `((oops . "not a POST")
                      (got . ,(request-method *request*))))))
 
@@ -334,8 +356,9 @@
                              :occurred-at (or (jref b :occurred-at) (unix-now)))))
                        `((ok . "Success!")))
                      (error (e)
+                       (shout-log "events" "error: ~A" e)
                        (setf (return-code* *reply*) 400)
-                       `((error . ,(format nil "~A" e)))))
+                       `((error . "invalid request"))))
                    `((oops . "not a POST")
                      (got . ,(request-method *request*))))))
 
@@ -353,16 +376,21 @@
                       (setf (content-type* *reply*) "application/json")
                       (format nil "~A~%" (json:encode-json-to-string '((ok . "rules updated")))))
                     (error (e)
+                      (shout-log "rules" "error: ~A" e)
                       (setf (return-code* *reply*) 400)
                       (setf (content-type* *reply*) "application/json")
                       (format nil "~A~%" (json:encode-json-to-string
-                                           `((error . ,(format nil "~A" e)))))))))
+                                           '((error . "invalid request"))))))))
               (:get  (with-lock-held (*rules-lock*) *rules-src*))
               (otherwise
                 (setf (return-code *reply*) 400)
                 (hunchentoot:abort-request-handler)))))
 
-  (hunchentoot:start (make-instance 'hunchentoot:easy-acceptor :port port)))
+  (hunchentoot:start (make-instance 'hunchentoot:easy-acceptor
+                       :port port
+                       :read-timeout 30
+                       :write-timeout 30
+                       :message-log-destination nil)))
 
 (defun scan (dbfile)
   (let ((t0 (get-internal-real-time)))
