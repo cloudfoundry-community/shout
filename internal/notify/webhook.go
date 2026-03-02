@@ -34,7 +34,7 @@ func (w *WebhookHandler) Send(ctx context.Context, args map[string]string) error
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("webhook handler: sending request: %w", err)
 	}

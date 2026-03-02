@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/cloudfoundry-community/shout/internal/engine"
@@ -18,26 +20,34 @@ import (
 
 // Config holds the API server configuration.
 type Config struct {
-	Port      int
-	DBPath    string
-	RulesFile string
-	OpsCreds  string // "user:pass"
+	Port       int
+	DBPath     string
+	RulesFile  string
+	OpsCreds   string // "user:pass"
 	AdminCreds string // "user:pass"
+	Expiry     int64  // default state expiry in seconds (0 = no expiry)
 }
 
 // Server is the Shout! HTTP API server.
 type Server struct {
 	cfg      Config
 	states   *state.Manager
-	engine   *engine.Engine
 	handlers *notify.Registry
 	mux      *http.ServeMux
+
+	engineMu    sync.RWMutex
+	engine      *engine.Engine
+	rulesSource []byte
 }
 
 // New creates a new API server.
 func New(cfg Config, handlers *notify.Registry) (*Server, error) {
 	store := state.NewJSONFileStore(cfg.DBPath)
-	mgr, err := state.NewManager(store)
+	var opts []state.ManagerOption
+	if cfg.Expiry > 0 {
+		opts = append(opts, state.WithExpiry(cfg.Expiry))
+	}
+	mgr, err := state.NewManager(store, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("initializing state: %w", err)
 	}
@@ -91,6 +101,7 @@ func (s *Server) scanLoop(ctx context.Context) {
 			s.states.Save()
 			return
 		case <-ticker.C:
+			s.states.Expire()
 			if err := s.states.Save(); err != nil {
 				log.Printf("error saving state: %v", err)
 			}
@@ -121,16 +132,24 @@ func (s *Server) loadRules(data []byte) error {
 		return fmt.Errorf("compiling rules: %w", err)
 	}
 
+	s.engineMu.Lock()
 	s.engine = eng
+	s.rulesSource = make([]byte, len(data))
+	copy(s.rulesSource, data)
+	s.engineMu.Unlock()
 	return nil
 }
 
 func (s *Server) fireRules(evt *state.Event, status string) {
-	if s.engine == nil {
+	s.engineMu.RLock()
+	eng := s.engine
+	s.engineMu.RUnlock()
+
+	if eng == nil {
 		return
 	}
 
-	results := s.engine.Evaluate(evt.Topic, status, evt.Message, evt.Link, evt.OK, evt.Metadata)
+	results := eng.Evaluate(evt.Topic, status, evt.Message, evt.Link, evt.OK, evt.Metadata)
 	for _, r := range results {
 		h, ok := s.handlers.Get(r.Handler)
 		if !ok {
@@ -190,6 +209,7 @@ func (s *Server) handleAnnouncement(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Announcements always fire rules, regardless of state.
+	evt.OK = true
 	s.fireRules(&evt, "announcement")
 
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "sent"})
@@ -214,7 +234,17 @@ func (s *Server) handleGetStates(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetRules(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	s.engineMu.RLock()
+	src := s.rulesSource
+	s.engineMu.RUnlock()
+
+	if src == nil {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "no rules loaded"})
+		return
+	}
+	w.Header().Set("Content-Type", "text/x-yaml")
+	w.WriteHeader(http.StatusOK)
+	w.Write(src)
 }
 
 func (s *Server) handlePostRules(w http.ResponseWriter, r *http.Request) {
@@ -277,10 +307,5 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func readBody(r *http.Request) ([]byte, error) {
 	defer r.Body.Close()
-	var buf [1 << 20]byte // 1MB max
-	n, err := r.Body.Read(buf[:])
-	if err != nil && err.Error() != "EOF" {
-		return nil, err
-	}
-	return buf[:n], nil
+	return io.ReadAll(io.LimitReader(r.Body, 1<<20))
 }

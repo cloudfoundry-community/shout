@@ -23,6 +23,7 @@ func main() {
 	flag.StringVar(&cfg.RulesFile, "rules", envStr("SHOUT_RULES", ""), "path to YAML rules file")
 	flag.StringVar(&cfg.OpsCreds, "ops", envStr("SHOUT_OPS_AUTH", "shout:shout"), "ops credentials (user:pass)")
 	flag.StringVar(&cfg.AdminCreds, "admin", envStr("SHOUT_ADMIN_AUTH", "shout:shout"), "admin credentials (user:pass)")
+	flag.Int64Var(&cfg.Expiry, "expiry", int64(envInt("SHOUT_EXPIRY", 86400)), "state expiry in seconds (0=no expiry)")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 	flag.Parse()
 
@@ -35,6 +36,7 @@ func main() {
 	handlers := notify.NewRegistry()
 	handlers.Register(notify.NewSlackHandler())
 	handlers.Register(notify.NewWebhookHandler())
+	handlers.Register(notify.NewEmailHandler())
 
 	srv, err := api.New(cfg, handlers)
 	if err != nil {

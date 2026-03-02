@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
+
+var httpClient = &http.Client{Timeout: 30 * time.Second}
 
 // SlackHandler sends notifications via Slack incoming webhooks.
 type SlackHandler struct{}
@@ -60,7 +63,7 @@ func (s *SlackHandler) Send(ctx context.Context, args map[string]string) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("slack handler: sending request: %w", err)
 	}

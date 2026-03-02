@@ -1,0 +1,55 @@
+services:
+  shout:
+    build:
+      context: .
+      dockerfile: Dockerfile.go
+    command:
+      - --port=7109
+      - --db=/data/shout.db
+      - --rules=/rules/rules.yml
+      - --ops=shouty:abouty
+      - --admin=admin:sadmin
+      - --expiry=0
+    ports:
+      - "7109:7109"
+    volumes:
+      - shout-data:/data
+      - ./rules.test.yml:/rules/rules.yml:ro
+    depends_on:
+      mock-slack:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:7109/info"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  mock-slack:
+    build: ./mock-slack
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 2s
+
+  test-client:
+    build:
+      context: ./test-client
+      dockerfile: Dockerfile.go
+    depends_on:
+      shout:
+        condition: service_healthy
+    environment:
+      SHOUT_URL: "http://shout:7109"
+      MOCK_SLACK_URL: "http://mock-slack:8080"
+      OPS_CREDS: "shouty:abouty"
+      ADMIN_CREDS: "admin:sadmin"
+    profiles:
+      - test
+
+volumes:
+  shout-data:

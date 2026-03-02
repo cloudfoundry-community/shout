@@ -76,7 +76,8 @@ func (m globMatcher) match(topic string) bool {
 }
 func (m regexMatcher) match(topic string) bool        { return m.re.MatchString(topic) }
 func (m exprMatcher) match(topic string) bool {
-	out, err := expr.Run(m.program, map[string]any{"topic": topic})
+	env := ExprEnv{Topic: topic}
+	out, err := expr.Run(m.program, env)
 	if err != nil {
 		return false
 	}
@@ -93,6 +94,10 @@ type ExprEnv struct {
 	Time    string `expr:"time"`
 	Hour    int    `expr:"hour"`
 	Minute  int    `expr:"minute"`
+
+	// Between checks if the current time falls within a window.
+	// Handles overnight windows (e.g. "23:00" to "02:00") automatically.
+	Between func(start, end string) bool `expr:"between"`
 }
 
 // TemplateContext is passed to Go templates for string interpolation.
@@ -185,6 +190,7 @@ func compileWhen(wd WhenDef, funcs template.FuncMap) (compiledWhen, error) {
 			for argName, argVal := range args {
 				tmpl, err := template.New(fmt.Sprintf("r%d-a%d-%s", k, k, argName)).
 					Funcs(funcs).
+					Option("missingkey=zero").
 					Parse(argVal)
 				if err != nil {
 					return cw, fmt.Errorf("parsing template for %s.%s: %w", handler, argName, err)
@@ -205,20 +211,26 @@ type EvalResult struct {
 	Reminder time.Duration
 }
 
-// Evaluate runs the rules engine against a topic event, returning actions
-// for the first matching FOR/WHEN combination (first-match-wins).
+// Evaluate runs the rules engine against a topic event. All FOR blocks
+// whose topic matcher matches are evaluated (all-fire semantics). Within
+// each FOR block, the first matching WHEN clause wins.
 func (e *Engine) Evaluate(topic, status, message, link string, ok bool, meta map[string]string) []EvalResult {
 	now := time.Now()
 	weekday := strings.ToLower(now.Weekday().String())[:3]
+
+	nowTime := now.Format("15:04")
 
 	env := ExprEnv{
 		Topic:   topic,
 		OK:      ok,
 		Status:  status,
 		Weekday: weekday,
-		Time:    now.Format("15:04"),
+		Time:    nowTime,
 		Hour:    now.Hour(),
 		Minute:  now.Minute(),
+		Between: func(start, end string) bool {
+			return timeBetween(nowTime, start, end)
+		},
 	}
 
 	ctx := TemplateContext{
@@ -231,12 +243,14 @@ func (e *Engine) Evaluate(topic, status, message, link string, ok bool, meta map
 		Vars:    e.vars,
 	}
 
+	var allResults []EvalResult
+
 	for _, rule := range e.rules {
 		if !rule.matcher.match(topic) {
 			continue
 		}
 
-		// First matching FOR — now find first matching WHEN.
+		// FOR matched — find first matching WHEN (first-match-wins within FOR).
 		for _, when := range rule.whens {
 			if when.condition != nil {
 				out, err := expr.Run(when.condition, env)
@@ -245,8 +259,7 @@ func (e *Engine) Evaluate(topic, status, message, link string, ok bool, meta map
 				}
 			}
 
-			// Matched — evaluate actions.
-			var results []EvalResult
+			// Matched — evaluate actions and collect results.
 			for _, action := range when.actions {
 				args := make(map[string]string)
 				for name, tmpl := range action.args {
@@ -257,20 +270,18 @@ func (e *Engine) Evaluate(topic, status, message, link string, ok bool, meta map
 						args[name] = buf.String()
 					}
 				}
-				results = append(results, EvalResult{
+				allResults = append(allResults, EvalResult{
 					Handler:  action.handler,
 					Args:     args,
 					Reminder: when.remind,
 				})
 			}
-			return results
+			break // first-match-wins within this FOR's WHENs
 		}
-
-		// FOR matched but no WHEN matched — stop (first-match-wins for FOR).
-		return nil
+		// continue to next FOR block (all-fire)
 	}
 
-	return nil
+	return allResults
 }
 
 func tmplLookup(m map[string]any, keys ...string) string {
@@ -280,4 +291,14 @@ func tmplLookup(m map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// timeBetween checks if nowTime is between start and end (HH:MM strings).
+// Handles overnight windows where start > end (e.g. "23:00" to "02:00").
+func timeBetween(now, start, end string) bool {
+	if start <= end {
+		return now >= start && now <= end
+	}
+	// Overnight: now >= start OR now <= end
+	return now >= start || now <= end
 }

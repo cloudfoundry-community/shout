@@ -22,6 +22,7 @@ type TopicState struct {
 	Status         string `json:"state"`
 	LastNotifiedAt int64  `json:"notified"`
 	RemindEvery    int64  `json:"reminder,omitempty"`
+	Expiry         int64  `json:"expiry,omitempty"`
 	PreviousEvent  *Event `json:"previous,omitempty"`
 	FirstEvent     *Event `json:"first,omitempty"`
 	LastEvent      *Event `json:"last,omitempty"`
@@ -49,10 +50,12 @@ type Manager struct {
 	mu     sync.RWMutex
 	states map[string]*TopicState
 	store  Store
+	dirty  bool
+	expiry int64 // default expiry in seconds (0 = no expiry)
 }
 
 // NewManager creates a new state manager backed by the given store.
-func NewManager(store Store) (*Manager, error) {
+func NewManager(store Store, opts ...ManagerOption) (*Manager, error) {
 	states, err := store.Load()
 	if err != nil {
 		return nil, err
@@ -60,7 +63,21 @@ func NewManager(store Store) (*Manager, error) {
 	if states == nil {
 		states = make(map[string]*TopicState)
 	}
-	return &Manager{states: states, store: store}, nil
+	m := &Manager{states: states, store: store}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m, nil
+}
+
+// ManagerOption configures the state manager.
+type ManagerOption func(*Manager)
+
+// WithExpiry sets the default expiry time in seconds for topic states.
+func WithExpiry(seconds int64) ManagerOption {
+	return func(m *Manager) {
+		m.expiry = seconds
+	}
 }
 
 // Ingest processes an event and returns the transition type:
@@ -78,8 +95,12 @@ func (m *Manager) Ingest(evt *Event) (transition string) {
 	ts, exists := m.states[evt.Topic]
 	if !exists {
 		ts = &TopicState{Name: evt.Topic}
+		if m.expiry > 0 {
+			ts.Expiry = m.expiry
+		}
 		m.states[evt.Topic] = ts
 	}
+	m.dirty = true
 
 	wasOK := ts.IsOK()
 
@@ -100,7 +121,7 @@ func (m *Manager) Ingest(evt *Event) (transition string) {
 		ts.FirstEvent = evt
 		ts.LastNotifiedAt = now
 		return "broken"
-	case !wasOK && evt.OK:
+	case !wasOK && evt.OK && exists:
 		// Was broken, now fixed.
 		ts.Status = "fixed"
 		ts.LastNotifiedAt = now
@@ -142,6 +163,7 @@ func (m *Manager) SetReminder(topic string, seconds int64) {
 	defer m.mu.Unlock()
 	if ts, ok := m.states[topic]; ok {
 		ts.RemindEvery = seconds
+		m.dirty = true
 	}
 }
 
@@ -151,6 +173,7 @@ func (m *Manager) MarkNotified(topic string) {
 	defer m.mu.Unlock()
 	if ts, ok := m.states[topic]; ok {
 		ts.LastNotifiedAt = time.Now().Unix()
+		m.dirty = true
 	}
 }
 
@@ -167,9 +190,31 @@ func (m *Manager) BrokenTopics() []*TopicState {
 	return result
 }
 
-// Save persists the current state to the store.
+// Save persists the current state to the store. Skips write when clean.
 func (m *Manager) Save() error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.store.Save(m.states)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.dirty {
+		return nil
+	}
+	if err := m.store.Save(m.states); err != nil {
+		return err
+	}
+	m.dirty = false
+	return nil
+}
+
+// Expire removes topic states that have exceeded their expiry time.
+func (m *Manager) Expire() {
+	now := time.Now().Unix()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for name, ts := range m.states {
+		if ts.Expiry > 0 && ts.LastEvent != nil {
+			if now-ts.LastEvent.ReportedAt > ts.Expiry {
+				delete(m.states, name)
+				m.dirty = true
+			}
+		}
+	}
 }
