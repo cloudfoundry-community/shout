@@ -255,4 +255,141 @@
       "Evaluating the ruleset should return the 24h reminder")
   (triggers "notified"))
 
+(subtest "AND logic"
+  (let ((ruleset
+          `((for *
+              (when ((and a b))
+                (made-it "a and b was true"))
+              (when *
+                (made-it "not both true"))))))
+    (try ruleset :params (pairlis '(:a :b) '(t t)))
+    (triggers "a and b was true" "(AND t t) is true")
+    (try ruleset :params (pairlis '(:a :b) '(t nil)))
+    (triggers "not both true" "(AND t nil) is false")
+    (try ruleset :params (pairlis '(:a :b) '(nil t)))
+    (triggers "not both true" "(AND nil t) is false")
+    (try ruleset :params (pairlis '(:a :b) '(nil nil)))
+    (triggers "not both true" "(AND nil nil) is false")))
+
+(subtest "Nested logic"
+  ;; (and (or a b) (not c)) — true when at least one of a/b and c is false
+  (let ((ruleset
+          `((for *
+              (when ((and (or a b) (not c)))
+                (made-it "matched"))
+              (when *
+                (made-it "no match"))))))
+    (try ruleset :params (pairlis '(:a :b :c) '(t nil nil)))
+    (triggers "matched" "(AND (OR t nil) (NOT nil)) is true")
+    (try ruleset :params (pairlis '(:a :b :c) '(nil nil nil)))
+    (triggers "no match" "(AND (OR nil nil) (NOT nil)) is false")
+    (try ruleset :params (pairlis '(:a :b :c) '(t t t)))
+    (triggers "no match" "(AND (OR t t) (NOT t)) is false")))
+
+(subtest "Time unit aliases"
+  ;; Days
+  (is (cons :remind 86400) (try `((for * (when * (remind 1 d)))))
+      "1 d = 86400s")
+  (is (cons :remind 86400) (try `((for * (when * (remind 1 day)))))
+      "1 day = 86400s")
+  (is (cons :remind 172800) (try `((for * (when * (remind 2 days)))))
+      "2 days = 172800s")
+  ;; Hours
+  (is (cons :remind 3600) (try `((for * (when * (remind 1 h)))))
+      "1 h = 3600s")
+  (is (cons :remind 3600) (try `((for * (when * (remind 1 hour)))))
+      "1 hour = 3600s")
+  ;; Minutes
+  (is (cons :remind 60) (try `((for * (when * (remind 1 m)))))
+      "1 m = 60s")
+  (is (cons :remind 60) (try `((for * (when * (remind 1 min)))))
+      "1 min = 60s")
+  (is (cons :remind 60) (try `((for * (when * (remind 1 minute)))))
+      "1 minute = 60s")
+  (is (cons :remind 120) (try `((for * (when * (remind 2 minutes)))))
+      "2 minutes = 120s")
+  ;; Seconds
+  (is (cons :remind 30) (try `((for * (when * (remind 30 s)))))
+      "30 s = 30s")
+  (is (cons :remind 30) (try `((for * (when * (remind 30 sec)))))
+      "30 sec = 30s")
+  (is (cons :remind 30) (try `((for * (when * (remind 30 second)))))
+      "30 second = 30s")
+  (is (cons :remind 30) (try `((for * (when * (remind 30 seconds)))))
+      "30 seconds = 30s"))
+
+(subtest "Metadata edge cases"
+  ;; (metadata? key) returns nil when key doesn't exist
+  (try `((for *
+           (when ((metadata? missing))
+             (made-it "found"))
+           (when *
+             (made-it "not found")))))
+  (triggers "not found" "(metadata? missing-key) is false")
+
+  ;; (metadata key) returns "" when key doesn't exist
+  (try `((for *
+           (when *
+             (made-it (metadata missing))))))
+  (triggers "" "(metadata missing-key) returns empty string"))
+
+(subtest "Weekend matching"
+  ;; Saturday, Jan 4, 1997 at noon
+  (let ((rules::*NOW* (encode-universal-time 0 0 12 4 1 1997)))
+    (try `((for *
+             (when ((on weekends))
+               (made-it "weekend"))
+             (when *
+               (made-it "weekday")))))
+    (triggers "weekend" "Saturday matches (on weekends)")
+
+    (try `((for *
+             (when ((on saturday))
+               (made-it "saturday"))
+             (when *
+               (made-it "wrong")))))
+    (triggers "saturday" "Saturday matches (on saturday)")))
+
+(subtest "Multiple handlers in body"
+  ;; Two plugin calls in one WHEN body — both should fire
+  (try `((for *
+           (when *
+             (made-it "first")
+             (made-it "second")))))
+  ;; Last call wins for *args* — verifies both calls executed
+  (triggers "second" "Last handler in body sets final result"))
+
+(subtest "Map lookup miss"
+  ;; lookup returns nil when no keys match
+  (try `((set m (map "a" "found"))
+         (for *
+           (when *
+             (made-it (lookup m "x" "y" "z"))))))
+  (triggers nil "Lookup returns nil when no keys match"))
+
+(subtest "FOR topic non-match skips"
+  (try `((for "other-topic"
+           (when * (made-it "wrong")))
+         (for *
+           (when * (made-it "fallback"))))
+       :params (pairlis '(:topic) '("my-topic")))
+  (triggers "fallback" "Non-matching FOR is skipped, fallback FOR * matches"))
+
+(subtest "Parse error in load/rules"
+  (is-error (rules:load/rules "((for * (when * (bad-syntax")
+            'simple-error
+            "Unterminated sexp raises error")
+  (is-error (rules:load/rules "#<invalid>")
+            'simple-error
+            "Invalid read syntax raises error"))
+
+(subtest "String interpolation of all parameters"
+  (try `((for *
+           (when *
+             (made-it "$topic: $status - $message ($link)"))))
+       :params (pairlis '(:topic :status :message :link)
+                         '("ci/pipeline" "now broken" "build failed" "http://ci/1")))
+  (triggers "ci/pipeline: now broken - build failed (http://ci/1)"
+            "All four parameter placeholders interpolate"))
+
 (finalize)
