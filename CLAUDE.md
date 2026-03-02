@@ -69,6 +69,119 @@ The rules engine (`shout/rules.lisp`) implements a Lisp-like DSL with:
 
 All matching FOR blocks fire (not first-match-wins) — this allows multiple notification channels for one topic. WHEN clauses within a FOR use first-match-wins semantics.
 
+### Notification Plugin System
+
+#### How It Works
+
+Notification backends are registered as named functions in `rules.lisp`:
+
+- **`register-plugin`** — Stores a handler function in the `*plugin-handlers*` alist, keyed by symbol. Called at startup in `api:run`.
+- **`dispatch-to-plugin`** — Looks up and calls a handler by name during rule evaluation. Triggered when a plugin name (e.g., `slack`) appears in a WHEN clause body.
+- **`registered-plugin?`** — Predicate used during rule parsing to distinguish plugin calls from DSL keywords.
+
+Currently only one plugin is registered: `slack`, which wraps `slack:send` with argument extraction from the rules DSL.
+
+#### Thread Safety Model
+
+**Plugin functions are stateless and thread-safe.** `slack:send` uses only local variables and `drakma:http-request` creates independent socket connections per call. New plugins (email, SMS, pager) do **not** need their own locks.
+
+**However**, plugins currently execute inside both locks:
+
+```
+POST /events
+  → with-lock-held (*states-lock*)     ← held during entire request
+      → set-state → ingest-event → trigger-edge
+          → notify-about-state
+              → with-lock-held (*rules-lock*)   ← also held
+                  → rules:eval/rules
+                      → dispatch-to-plugin → slack:send  ← HTTP call inside BOTH locks
+```
+
+The background scan loop has the same pattern — reminder notifications fire inside `*states-lock*`.
+
+**Implications:** All notifications are serialized. A slow webhook (e.g., 3s timeout) blocks all other state updates and the scan loop. Adding multiple notification backends on the same event compounds the problem. A future optimization could move plugin dispatch outside the lock scope (queue notifications, release locks, then send), since plugins only need their evaluated arguments, not shared state.
+
+#### Adding a New Notification Backend
+
+1. **Create a new file** (e.g., `email.lisp`) with a package and send function:
+
+```lisp
+;;; email.lisp — Email notification plugin for Shout!
+(in-package :email)
+
+(defun env (name default)
+  (or (sb-unix::posix-getenv name) default))
+
+(defun send (body &key (to      (env "SHOUT_EMAIL_TO" ""))
+                       (from    (env "SHOUT_EMAIL_FROM" "shout@example.com"))
+                       (subject "Shout! Notification")
+                       (smtp    (env "SHOUT_SMTP_HOST" "localhost")))
+  (when (equal to "")
+    (api:shout-log "email" "no recipient configured, skipping notification")
+    (return-from send nil))
+  (handler-case
+    ;; Replace with actual SMTP implementation (e.g., cl-smtp)
+    (progn
+      (api:shout-log "email" "sending to ~A via ~A" to smtp)
+      ;; ... send email here ...
+      )
+    (error (e)
+      (api:shout-log "email" "failed to send: ~A" e)
+      nil)))
+```
+
+2. **Add the package** to `packages.lisp`:
+
+```lisp
+(defpackage :email
+  (:use :cl)
+  (:export :send))
+```
+
+3. **Add the file** to `shout.asd` components:
+
+```lisp
+(:file "email" :depends-on ("packages"))
+```
+
+4. **Register the plugin** in `api:run` (in `api.lisp`, alongside the Slack registration):
+
+```lisp
+(rules:register-plugin
+  'rules::email
+  #'(lambda (args)
+      (email:send
+        (arg args :body)
+        :to      (arg args :to)
+        :subject (arg args :subject))))
+```
+
+5. **Use it in rules**:
+
+```
+(for *)
+  (when (broken)
+    (email :to "oncall@example.com"
+           :subject "$topic is $status"
+           :body "$message"))
+```
+
+6. **Add any new Quicklisp dependency** (e.g., `cl-smtp`) to `shout.asd` `:depends-on` and run `make vendor` to refresh vendored deps for air-gapped builds.
+
+#### Where Configuration Lives
+
+Plugin configuration follows the existing pattern of environment variables:
+
+| Layer | File | Purpose |
+|-------|------|---------|
+| Defaults | Plugin source (e.g., `slack.lisp`) | `env` calls with fallback values |
+| Docker | `Dockerfile` `ENV` directives | Build-time defaults |
+| Compose | `docker-compose.yml` `environment:` | Development overrides |
+| BOSH | `shout-boshrelease/jobs/shout/spec` | Production deployment properties |
+| Rules DSL | Rules file loaded via `/rules` | Per-notification overrides (e.g., `:webhook`) |
+
+Environment variables override defaults; per-notification keyword arguments in the rules DSL override everything.
+
 ### Authentication
 
 HTTP Basic Auth with two tiers:
