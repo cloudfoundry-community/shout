@@ -19,4 +19,5 @@
   :depends-on (#:hunchentoot
                #:drakma
                #:cl-json
-               #:daemon))
+               #:daemon
+               #:bordeaux-threads))

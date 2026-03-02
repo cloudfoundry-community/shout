@@ -249,4 +249,7 @@
 
 (defun load/rules (str)
   (let ((*package* (find-package "RULES")))
-    (read-from-string str)))
+    (handler-case
+      (read-from-string str)
+      (error (e)
+        (error "failed to parse rules: ~A" e)))))

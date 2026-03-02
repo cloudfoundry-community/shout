@@ -21,5 +21,8 @@
   (:use :cl
         :hunchentoot
         :cl-json)
+  (:import-from :bordeaux-threads
+                :make-lock
+                :with-lock-held)
   (:export :run
            :scan))

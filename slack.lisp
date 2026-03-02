@@ -17,13 +17,18 @@
                        (username (env "SHOUT_BOTNAME" *default-name*))
                        (webhook  (env "SHOUT_WEBHOOK" ""))
                        (attachments nil))
-  (if (equal webhook "")
-    (error "no webhook supplied to slack:send!"))
-  (drakma:http-request webhook
-                       :method :post
-                       :content (json:encode-json-to-string
-                                  `((text . ,text)
-                                    (username . ,username)
-                                    (icon_url . ,icon)
-                                    (attachments . ,attachments)))))
+  (when (equal webhook "")
+    (format *error-output* "[slack] no webhook configured, skipping notification~%")
+    (return-from send nil))
+  (handler-case
+    (drakma:http-request webhook
+                         :method :post
+                         :content (json:encode-json-to-string
+                                    `((text . ,text)
+                                      (username . ,username)
+                                      (icon_url . ,icon)
+                                      (attachments . ,attachments))))
+    (error (e)
+      (format *error-output* "[slack] failed to send notification: ~A~%" e)
+      nil)))
 

@@ -14,6 +14,7 @@
   (- (get-universal-time) *EPOCH*))
 
 (defvar *states* '())
+(defvar *states-lock* (make-lock "states"))
 (defvar *rules* '())
 (defvar *rules-src* "")
 
@@ -80,22 +81,26 @@
           (unix-now))))
 
 (defun notify-about-state (state event mode edge)
-  (let ((result (rules:eval/rules *rules*
-                  (pairlis
-                    '(:topic :ok? :status :last-notified :message :link)
-                    (list
-                      (topic state)
-                      (event-ok? event)
-                      (format nil "~A ~A" mode edge)
-                      (last-notified-at state)
-                      (event-message event)
-                      (if (equal (event-link event) "")
-                        nil
-                        (event-link event))))
-                  (event-metadata event))))
-    (setf (remind-every state)
-          (if (and result (eq (car result) :remind))
-            (cdr result)))))
+  (handler-case
+    (let ((result (rules:eval/rules *rules*
+                    (pairlis
+                      '(:topic :ok? :status :last-notified :message :link)
+                      (list
+                        (topic state)
+                        (event-ok? event)
+                        (format nil "~A ~A" mode edge)
+                        (last-notified-at state)
+                        (event-message event)
+                        (if (equal (event-link event) "")
+                          nil
+                          (event-link event))))
+                    (event-metadata event))))
+      (setf (last-notified-at state) (unix-now))
+      (setf (remind-every state)
+            (if (and result (eq (car result) :remind))
+              (cdr result))))
+    (error (e)
+      (format *error-output* "[notify] error notifying about ~A: ~A~%" (topic state) e))))
 
 (defun notify-announcement (topic event)
   (rules:eval/rules *rules*
@@ -254,10 +259,12 @@
     db))
 
 (defun write-database (path db)
-  (with-open-file (out path :direction :output :if-exists :supersede)
-    (format out "~A~%" (json:encode-json-to-string
-                         (mapcar #'(lambda (pair)
-                                     (state-json (cdr pair))) db)))))
+  (let ((tmp (make-pathname :type "tmp" :defaults path)))
+    (with-open-file (out tmp :direction :output :if-exists :supersede)
+      (format out "~A~%" (json:encode-json-to-string
+                           (mapcar #'(lambda (pair)
+                                       (state-json (cdr pair))) db))))
+    (rename-file tmp path)))
 
 (defun run-api (&key (port 7109) (ops-auth *default-auth*) (admin-auth *default-auth*))
   ;; GET /info
@@ -273,23 +280,28 @@
    ; GET /states
   (handle-json (debug-endpoint "/states")
                (with-auth ops-auth
-                 (mapcar #'(lambda (a)
-                    (state-json (cdr a))) *states*)))
+                 (with-lock-held (*states-lock*)
+                   (mapcar #'(lambda (a)
+                      (state-json (cdr a))) *states*))))
 
   ;; POST /announce
   (handle-json "/announcements"
                (with-auth ops-auth
                  (if (eq (request-method* *request*) :post)
-                   (let ((b (json-body)))
-                     (notify-announcement
-                       (jref b :topic)
-                       (make-instance 'event
-                         :message     (jref b :message)
-                         :link        (jref b :link)
-                         :ok          (jref b :ok)
-                         :metadata    (jref b :metadata)
-                         :occurred-at (or (jref b :occurred-at) (unix-now))))
-                     `((ok . "Success!")))
+                   (handler-case
+                     (let ((b (json-body)))
+                       (notify-announcement
+                         (jref b :topic)
+                         (make-instance 'event
+                           :message     (jref b :message)
+                           :link        (jref b :link)
+                           :ok          (jref b :ok)
+                           :metadata    (jref b :metadata)
+                           :occurred-at (or (jref b :occurred-at) (unix-now))))
+                       `((ok . "Success!")))
+                     (error (e)
+                       (setf (return-code* *reply*) 400)
+                       `((error . ,(format nil "~A" e)))))
                    `((oops . "not a POST")
                      (got . ,(request-method *request*))))))
 
@@ -297,16 +309,21 @@
   (handle-json "/events"
                (with-auth ops-auth
                  (if (eq (request-method* *request*) :post)
-                   (let ((b (json-body)))
-                     (set-state
-                       (jref b :topic)
-                       (make-instance 'event
-                         :message     (jref b :message)
-                         :link        (jref b :link)
-                         :ok          (jref b :ok)
-                         :metadata    (jref b :metadata)
-                         :occurred-at (or (jref b :occurred-at) (unix-now))))
-                     `((ok . "Success!")))
+                   (handler-case
+                     (let ((b (json-body)))
+                       (with-lock-held (*states-lock*)
+                         (set-state
+                           (jref b :topic)
+                           (make-instance 'event
+                             :message     (jref b :message)
+                             :link        (jref b :link)
+                             :ok          (jref b :ok)
+                             :metadata    (jref b :metadata)
+                             :occurred-at (or (jref b :occurred-at) (unix-now)))))
+                       `((ok . "Success!")))
+                     (error (e)
+                       (setf (return-code* *reply*) 400)
+                       `((error . ,(format nil "~A" e)))))
                    `((oops . "not a POST")
                      (got . ,(request-method *request*))))))
 
@@ -316,8 +333,17 @@
             (case (request-method* *request*)
               (:post
                 (let ((rules-src (raw-post-data :force-text t)))
-                  (setf *rules* (rules:load/rules rules-src))
-                  (setf *rules-src* rules-src)))
+                  (handler-case
+                    (let ((parsed (rules:load/rules rules-src)))
+                      (setf *rules* parsed)
+                      (setf *rules-src* rules-src)
+                      (setf (content-type* *reply*) "application/json")
+                      (format nil "~A~%" (json:encode-json-to-string '((ok . "rules updated")))))
+                    (error (e)
+                      (setf (return-code* *reply*) 400)
+                      (setf (content-type* *reply*) "application/json")
+                      (format nil "~A~%" (json:encode-json-to-string
+                                           `((error . ,(format nil "~A" e)))))))))
               (:get  *rules-src*)
               (otherwise
                 (setf (return-code *reply*) 400)
@@ -326,12 +352,16 @@
   (hunchentoot:start (make-instance 'hunchentoot:easy-acceptor :port port)))
 
 (defun scan (dbfile)
-  (write-database dbfile *states*)
-  (loop for pair in *states*
-        do (let ((state (cdr pair)))
-             (when (state-needs-reminder? state)
-               (notify-about-state
-                 state (last-event state) "still" (status-of state))))))
+  (handler-case
+    (with-lock-held (*states-lock*)
+      (write-database dbfile *states*)
+      (loop for pair in *states*
+            do (let ((state (cdr pair)))
+                 (when (state-needs-reminder? state)
+                   (notify-about-state
+                     state (last-event state) "still" (status-of state))))))
+    (error (e)
+      (format *error-output* "[scan] error during scan cycle: ~A~%" e))))
 
 (defun run (&key (port *default-port*)
                  (dbfile *default-dbfile*)
