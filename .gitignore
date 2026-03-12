@@ -6,3 +6,4 @@
 /docker/shout
 /build
 /coverage
+.env

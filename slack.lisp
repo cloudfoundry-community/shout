@@ -27,3 +27,33 @@
                                     (icon_url . ,icon)
                                     (attachments . ,attachments)))))
 
+(defun send-api (text &key (token   (env "SHOUT_SLACK_TOKEN" ""))
+                            (channel (env "SHOUT_SLACK_CHANNEL" ""))
+                            (icon     (env "SHOUT_BOTICON" *default-icon*))
+                            (username (env "SHOUT_BOTNAME" *default-name*))
+                            (attachments nil))
+  (when (equal token "")
+    (error "no token supplied to slack:send-api! (set SHOUT_SLACK_TOKEN or pass :token)"))
+  (when (equal channel "")
+    (error "no channel supplied to slack:send-api! (set SHOUT_SLACK_CHANNEL or pass :channel)"))
+  (multiple-value-bind (body status)
+    (drakma:http-request "https://slack.com/api/chat.postMessage"
+                         :method :post
+                         :content-type "application/json; charset=utf-8"
+                         :additional-headers `(("Authorization" . ,(format nil "Bearer ~A" token)))
+                         :content (json:encode-json-to-string
+                                    `((channel . ,channel)
+                                      (text . ,text)
+                                      (username . ,username)
+                                      (icon_url . ,icon)
+                                      (attachments . ,attachments)))
+                         :connection-timeout 30)
+    (declare (ignore status))
+    (let* ((response (json:decode-json-from-string
+                       (if (stringp body) body
+                           (flexi-streams:octets-to-string body :external-format :utf-8))))
+           (ok (cdr (assoc :ok response)))
+           (err (cdr (assoc :error response))))
+      (unless ok
+        (error "slack-app API error: ~A" (or err "unknown error"))))))
+

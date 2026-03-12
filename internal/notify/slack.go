@@ -38,18 +38,8 @@ func (s *SlackHandler) Send(ctx context.Context, args map[string]string) error {
 		payload["icon_url"] = icon
 	}
 
-	// Build attachment if color or attach text is provided.
-	color := args["color"]
-	attachText := args["attach"]
-	if color != "" || attachText != "" {
-		attachment := map[string]string{}
-		if color != "" {
-			attachment["color"] = color
-		}
-		if attachText != "" {
-			attachment["text"] = attachText
-		}
-		payload["attachments"] = []map[string]string{attachment}
+	if attachments := buildAttachments(args); attachments != nil {
+		payload["attachments"] = attachments
 	}
 
 	body, err := json.Marshal(payload)

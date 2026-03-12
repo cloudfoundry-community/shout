@@ -5,6 +5,7 @@
         :drakma
         :cl-json)
   (:export :send
+           :send-api
            :attach))
 
 (defpackage :shout

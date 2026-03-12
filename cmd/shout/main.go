@@ -41,6 +41,7 @@ func main() {
 	// Register notification handlers.
 	handlers := notify.NewRegistry()
 	handlers.Register(notify.NewSlackHandler())
+	handlers.Register(notify.NewSlackAppHandler())
 	handlers.Register(notify.NewWebhookHandler())
 	handlers.Register(notify.NewEmailHandler())
 
