@@ -481,7 +481,7 @@ The `go` / `lisp` selector works with all targets:
 | `make check [go\|lisp]` | Static analysis (Go: fmt + vet, Lisp: sblint) |
 | `make clean [go\|lisp]` | Remove build artifacts |
 | `make coverage [go\|lisp]` | Run coverage analysis |
-| `make release [go\|lisp]` | Build release binaries (cross-compile for Go) |
+| `make release [go\|lisp]` | Build release binaries (Go: cross-compile all platforms, Lisp: no -dev tag) |
 | `make security [go\|lisp]` | Security scanning (Go: gosec + govulncheck + trivy, Lisp: sblint + trivy) |
 | `make docker [go\|lisp]` | Build Docker image |
 | `make help [go\|lisp]` | Show available targets |
