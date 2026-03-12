@@ -4,18 +4,18 @@ Thank you for your interest in contributing to Shout!
 
 ## Prerequisites
 
-### Common Lisp (develop branch)
+### Common Lisp
 
 - [SBCL](http://www.sbcl.org/) built with `--fancy` (or Roswell/Homebrew SBCL)
 - GNU Make
 
-### Go rewrite (norm/go-shout branch)
+### Go
 
 - [Go 1.26+](https://go.dev/dl/)
 - GNU Make
 
 > **Note:** The Go rewrite is the future direction for Shout! New features should
-> target the Go codebase. The Lisp codebase on `develop` receives security fixes
+> target the Go codebase. The Lisp codebase receives security fixes
 > and maintenance only.
 
 ## Getting Started
@@ -33,7 +33,7 @@ Thank you for your interest in contributing to Shout!
 
 ## Development Workflow
 
-### Common Lisp (develop branch)
+### Common Lisp
 
 ```bash
 make quicklisp    # Set up Quicklisp (uses vendored deps if available)
@@ -48,7 +48,7 @@ Run in development without compiling:
 sbcl --script run.lisp
 ```
 
-### Go rewrite (norm/go-shout branch)
+### Go
 
 ```bash
 make -f Makefile-go build    # Build the binary
@@ -71,10 +71,10 @@ make -f Makefile-go security  # Run gosec + govulncheck + trivy (Go only)
 
 ## Submitting Changes
 
-1. Ensure all tests pass for the branch you're targeting
+1. Ensure all tests pass for the codebase you're targeting
 2. Commit your changes with a clear message describing the **why**
 3. Push to your fork: `git push origin my-new-feature`
-4. Open a Pull Request against the appropriate branch (`develop` for Lisp, `main` for Go)
+4. Open a Pull Request
 
 ### Pull Request Guidelines
 

@@ -1,0 +1,11 @@
+rules:
+  - for: "*"
+    when:
+      - match: "*"
+        remind: 5m
+        do:
+          - slack:
+              webhook: "http://mock-slack:8080/"
+              text: "{{ .Topic }} is {{ .Status }}"
+              color: '{{ if .OK }}good{{ else }}danger{{ end }}'
+              attach: '{{ if .Link }}{{ .Message }} <{{ .Link }}>{{ else }}{{ .Message }}{{ end }}'

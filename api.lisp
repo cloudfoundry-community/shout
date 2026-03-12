@@ -474,6 +474,18 @@
             :attachments (list
                            (slack:attach
                              (arg args :attach)
+                             :color (arg args :color))))))
+
+    (rules:register-plugin
+      'rules::slack-app
+      #'(lambda (args)
+          (slack:send-api
+            (arg args :text)
+            :token   (arg args :token)
+            :channel (arg args :channel)
+            :attachments (list
+                           (slack:attach
+                             (arg args :attach)
                              :color (arg args :color)))))))
 
   (shout-log "startup" "binding *:~A~A" port (if (and tls-cert tls-key) " (TLS)" ""))

@@ -1,0 +1,203 @@
+NAME    := shout
+MODULE  := github.com/cloudfoundry-community/shout
+SHELL   := /bin/bash
+
+# ── Version ──────────────────────────────────────────────────────
+# VERSION can be set explicitly (e.g. make VERSION=1.2.3) or is
+# derived from the latest git tag with patch auto-incremented.
+# Supports full semver: 1.2.3-rc1+build123
+
+define is_not_number
+$(shell echo ${1} | sed -e 's/[0123456789]//g')
+endef
+
+CLEAN_VERSION       = $(patsubst v%,%,$(VERSION))
+HAS_BUILDMETA      := $(findstring +,$(CLEAN_VERSION))
+VERSION_BUILDMETA   := $(if $(HAS_BUILDMETA),$(lastword $(subst +, ,$(CLEAN_VERSION))),)
+
+VERSION_AND_PRERELEASE := $(firstword $(subst +, ,$(CLEAN_VERSION)))
+
+HAS_PRERELEASE      := $(findstring -,$(VERSION_AND_PRERELEASE))
+VERSION_ONLY        := $(firstword $(subst -, ,$(VERSION_AND_PRERELEASE)))
+VERSION_PRERELEASE  := $(if $(HAS_PRERELEASE),$(patsubst $(VERSION_ONLY)-%,%,$(VERSION_AND_PRERELEASE)),)
+
+ifneq ($(VERSION_ONLY),)
+VERSION_SPLIT := $(subst ., ,$(VERSION_ONLY))
+  ifneq ($(words $(VERSION_SPLIT)),3)
+    $(error VERSION does not have 3 parts: $(VERSION))
+  endif
+else
+VERSION_TAG         := $(shell git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0)
+CLEAN_VERSION_TAG    = $(patsubst v%,%,$(VERSION_TAG))
+VERSION_SPLIT       := $(subst ., ,$(CLEAN_VERSION_TAG))
+  ifneq ($(words $(VERSION_SPLIT)),3)
+    $(error VERSION_TAG does not have 3 parts: $(VERSION_TAG))
+  endif
+  ifneq ($(words $(call is_not_number,$(word 3,$(VERSION_SPLIT)))), 0)
+    $(error VERSION_TAG patch contains non-numeric characters: $(VERSION_TAG))
+  endif
+  # Auto-increment patch
+  VERSION_SPLIT := $(wordlist 1, 2, $(VERSION_SPLIT)) $(shell echo $$(($(word 3,$(VERSION_SPLIT))+1)))
+endif
+
+ifneq ($(words $(call is_not_number,$(VERSION_SPLIT))), 0)
+  $(error Version contains non-numeric characters: $(VERSION_SPLIT))
+endif
+
+SEMVER_MAJOR      ?= $(word 1,$(VERSION_SPLIT))
+SEMVER_MINOR      ?= $(word 2,$(VERSION_SPLIT))
+SEMVER_PATCH      ?= $(word 3,$(VERSION_SPLIT))
+SEMVER_PRERELEASE ?= $(VERSION_PRERELEASE)
+SEMVER_BUILDMETA  ?= $(VERSION_BUILDMETA)
+
+BUILD_DATE        := $(shell date -u -Iseconds)
+BUILD_VCS_URL     := $(shell git config --get remote.origin.url 2>/dev/null)
+BUILD_VCS_ID      := $(shell git log -n 1 --date=iso-strict-local --format="%h" 2>/dev/null)
+BUILD_VCS_ID_DATE := $(shell TZ=UTC0 git log -n 1 --date=iso-strict-local --format='%ad' 2>/dev/null)
+
+# dev builds get -dev prerelease tag
+build: SEMVER_PRERELEASE := $(or $(SEMVER_PRERELEASE),dev)
+
+SEMVER_VERSION := $(SEMVER_MAJOR).$(SEMVER_MINOR).$(SEMVER_PATCH)
+SEMVER_VERSION := $(SEMVER_VERSION)$(if $(SEMVER_PRERELEASE),-$(SEMVER_PRERELEASE))
+
+VERPKG := $(MODULE)/pkg/version
+
+GO_LDFLAGS = -s -w \
+	-X '$(VERPKG).SemVerMajor=$(SEMVER_MAJOR)' \
+	-X '$(VERPKG).SemVerMinor=$(SEMVER_MINOR)' \
+	-X '$(VERPKG).SemVerPatch=$(SEMVER_PATCH)' \
+	-X '$(VERPKG).SemVerPrerelease=$(SEMVER_PRERELEASE)' \
+	-X '$(VERPKG).SemVerBuild=$(SEMVER_BUILDMETA)' \
+	-X '$(VERPKG).BuildDate=$(BUILD_DATE)' \
+	-X '$(VERPKG).BuildVcsUrl=$(BUILD_VCS_URL)' \
+	-X '$(VERPKG).BuildVcsId=$(BUILD_VCS_ID)' \
+	-X '$(VERPKG).BuildVcsIdDate=$(BUILD_VCS_ID_DATE)'
+
+# ── Build ────────────────────────────────────────────────────────
+default: build
+
+build:
+	go build -ldflags="$(GO_LDFLAGS)" -o $(NAME) ./cmd/shout
+
+# ── Quality ──────────────────────────────────────────────────────
+fmt:
+	go fmt ./...
+
+vet:
+	go vet ./...
+
+check: fmt vet
+
+test: check
+	go test -race ./cmd/... ./internal/... ./pkg/...
+
+# ── Coverage ─────────────────────────────────────────────────────
+coverage:
+	go test -coverprofile=coverage.out ./cmd/... ./internal/... ./pkg/...
+	go tool cover -func=coverage.out
+
+coverage-html: coverage
+	go tool cover -html=coverage.out -o coverage.html
+
+coverage-check:
+	@go test -coverprofile=coverage.out ./cmd/... ./internal/... ./pkg/... > /dev/null 2>&1
+	@TOTAL=$$(go tool cover -func=coverage.out | grep ^total: | awk '{print $$3}' | tr -d '%'); \
+	echo "Total coverage: $${TOTAL}%"; \
+	if [ $$(echo "$${TOTAL} < 50" | bc) -eq 1 ]; then \
+		echo "FAIL: coverage $${TOTAL}% is below 50% threshold"; \
+		exit 1; \
+	else \
+		echo "OK: coverage meets 50% threshold"; \
+	fi
+
+# ── Clean ────────────────────────────────────────────────────────
+clean:
+	rm -f $(NAME) $(NAME)-linux-* $(NAME)-darwin-* coverage.out coverage.html
+
+# ── Security ─────────────────────────────────────────────────────
+gosec:
+	gosec ./...
+
+govulncheck:
+	govulncheck ./...
+
+trivy:
+	trivy fs --scanners vuln,secret,misconfig .
+
+trivy-image:
+	trivy image shout:latest
+
+security: gosec govulncheck trivy
+
+# ── Cross-compilation ────────────────────────────────────────────
+linux-amd64:
+	GOOS=linux GOARCH=amd64 go build -ldflags="$(GO_LDFLAGS)" -o $(NAME)-linux-amd64 ./cmd/shout
+
+linux-arm64:
+	GOOS=linux GOARCH=arm64 go build -ldflags="$(GO_LDFLAGS)" -o $(NAME)-linux-arm64 ./cmd/shout
+
+darwin-amd64:
+	GOOS=darwin GOARCH=amd64 go build -ldflags="$(GO_LDFLAGS)" -o $(NAME)-darwin-amd64 ./cmd/shout
+
+darwin-arm64:
+	GOOS=darwin GOARCH=arm64 go build -ldflags="$(GO_LDFLAGS)" -o $(NAME)-darwin-arm64 ./cmd/shout
+
+all-platforms: linux-amd64 linux-arm64 darwin-amd64 darwin-arm64
+
+# ── Version Info ─────────────────────────────────────────────────
+debug-version:
+	@echo "SEMVER_VERSION    $(SEMVER_VERSION)"
+	@echo "SEMVER_MAJOR      $(SEMVER_MAJOR)"
+	@echo "SEMVER_MINOR      $(SEMVER_MINOR)"
+	@echo "SEMVER_PATCH      $(SEMVER_PATCH)"
+	@echo "SEMVER_PRERELEASE $(SEMVER_PRERELEASE)"
+	@echo "SEMVER_BUILDMETA  $(SEMVER_BUILDMETA)"
+	@echo "BUILD_DATE        $(BUILD_DATE)"
+	@echo "BUILD_VCS_URL     $(BUILD_VCS_URL)"
+	@echo "BUILD_VCS_ID      $(BUILD_VCS_ID)"
+	@echo "BUILD_VCS_ID_DATE $(BUILD_VCS_ID_DATE)"
+
+# ── Help ─────────────────────────────────────────────────────────
+help:
+	@echo "Usage: make -f Makefile-go <target>"
+	@echo ""
+	@echo "Build:"
+	@echo "  build            Build the shout binary (default)"
+	@echo "  clean            Remove build artifacts and coverage files"
+	@echo ""
+	@echo "Quality:"
+	@echo "  fmt              Run go fmt on all packages"
+	@echo "  vet              Run go vet on all packages"
+	@echo "  check            Run fmt + vet"
+	@echo "  test             Run tests with race detection (runs check first)"
+	@echo ""
+	@echo "Coverage:"
+	@echo "  coverage         Run tests and print coverage by function"
+	@echo "  coverage-html    Generate HTML coverage report"
+	@echo "  coverage-check   Verify coverage meets 50% threshold"
+	@echo ""
+	@echo "Security:"
+	@echo "  gosec            Run gosec static analysis"
+	@echo "  govulncheck      Run Go vulnerability checker"
+	@echo "  trivy            Run Trivy filesystem scan"
+	@echo "  trivy-image      Run Trivy on the shout:latest Docker image"
+	@echo "  security         Run gosec + govulncheck + trivy"
+	@echo ""
+	@echo "Cross-compilation:"
+	@echo "  linux-amd64      Build for linux/amd64"
+	@echo "  linux-arm64      Build for linux/arm64"
+	@echo "  darwin-amd64     Build for darwin/amd64"
+	@echo "  darwin-arm64     Build for darwin/arm64"
+	@echo "  all-platforms    Build all platform variants"
+	@echo ""
+	@echo "Version:"
+	@echo "  debug-version    Print resolved version variables"
+	@echo ""
+	@echo "Version is derived from git tags (auto-increments patch)."
+	@echo "Override with: make -f Makefile-go VERSION=1.2.3 build"
+
+.PHONY: default build fmt vet check test clean coverage coverage-html coverage-check \
+	gosec govulncheck trivy trivy-image security \
+	linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 all-platforms \
+	debug-version help
