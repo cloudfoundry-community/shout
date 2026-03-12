@@ -10,7 +10,8 @@ include version.mk
 #   make build go       — build Go only
 #   make build lisp     — build Lisp only
 #   make test go        — test Go only
-#   (same pattern for: test, clean, coverage, docker)
+#   (same pattern for: test, clean, coverage, docker, release,
+#    security, help)
 
 WANT_GO   :=
 WANT_LISP :=
@@ -38,13 +39,16 @@ go lisp:
 
 # ── Common targets ─────────────────────────────────────────────
 
-.PHONY: build test clean coverage docker
+.PHONY: build test clean coverage docker release security help
 
-build: $(call GO_TARGETS,go-build) $(call LISP_TARGETS,lisp-build)
-test:  $(call GO_TARGETS,go-test)  $(call LISP_TARGETS,lisp-test)
-clean: $(call GO_TARGETS,go-clean) $(call LISP_TARGETS,lisp-clean)
+build:    $(call GO_TARGETS,go-build)    $(call LISP_TARGETS,lisp-build)
+test:     $(call GO_TARGETS,go-test)     $(call LISP_TARGETS,lisp-test)
+clean:    $(call GO_TARGETS,go-clean)    $(call LISP_TARGETS,lisp-clean)
 coverage: $(call GO_TARGETS,go-coverage) $(call LISP_TARGETS,lisp-coverage)
-docker: $(call GO_TARGETS,go-docker) $(call LISP_TARGETS,lisp-docker)
+docker:   $(call GO_TARGETS,go-docker)   $(call LISP_TARGETS,lisp-docker)
+release:  $(call GO_TARGETS,go-release)  $(call LISP_TARGETS,lisp-release)
+security: $(call GO_TARGETS,go-security) $(call LISP_TARGETS,lisp-security)
+help:     $(call GO_TARGETS,go-help)     $(call LISP_TARGETS,lisp-help)
 
 # ── Go targets ─────────────────────────────────────────────────
 
@@ -62,6 +66,7 @@ GO_LDFLAGS = -s -w \
 	-X '$(VERPKG).BuildVcsIdDate=$(BUILD_VCS_ID_DATE)'
 
 .PHONY: go-build go-test go-check go-clean go-coverage go-docker
+.PHONY: go-release go-security go-help
 
 # dev builds get -dev prerelease tag
 go-build: SEMVER_PRERELEASE := $(or $(SEMVER_PRERELEASE),dev)
@@ -85,11 +90,62 @@ go-clean:
 go-docker:
 	docker build -t $(NAME):latest .
 
-# ── Go-only targets ────────────────────────────────────────────
+go-release: go-release-linux-amd64 go-release-linux-arm64 go-release-darwin-amd64 go-release-darwin-arm64
+	@echo "Go release binaries built:"
+	@ls -lh $(NAME)-linux-* $(NAME)-darwin-* 2>/dev/null
+
+go-security: go-security-gosec go-security-govulncheck go-security-trivy
+
+go-help:
+	@echo "Go targets:"
+	@echo "  build            Build binary for current platform"
+	@echo "  test             Run fmt + vet + tests with race detection"
+	@echo "  clean            Remove build artifacts and coverage files"
+	@echo "  coverage         Run tests and print coverage by function"
+	@echo "  coverage-html    Generate HTML coverage report"
+	@echo "  coverage-check   Verify coverage meets 50%% threshold"
+	@echo "  docker           Build Docker image"
+	@echo "  release          Cross-compile all platform binaries"
+	@echo "  security         Run gosec + govulncheck + trivy"
+	@echo "  fmt              Run go fmt"
+	@echo "  vet              Run go vet"
+	@echo "  check            Run fmt + vet"
+	@echo "  debug-version    Print resolved version variables"
+	@echo ""
+
+# ── Go release (cross-compilation) ────────────────────────────
+
+.PHONY: go-release-linux-amd64 go-release-linux-arm64
+.PHONY: go-release-darwin-amd64 go-release-darwin-arm64
+
+go-release-linux-amd64:
+	GOOS=linux GOARCH=amd64 go build -ldflags="$(GO_LDFLAGS)" -o $(NAME)-linux-amd64 ./cmd/shout
+
+go-release-linux-arm64:
+	GOOS=linux GOARCH=arm64 go build -ldflags="$(GO_LDFLAGS)" -o $(NAME)-linux-arm64 ./cmd/shout
+
+go-release-darwin-amd64:
+	GOOS=darwin GOARCH=amd64 go build -ldflags="$(GO_LDFLAGS)" -o $(NAME)-darwin-amd64 ./cmd/shout
+
+go-release-darwin-arm64:
+	GOOS=darwin GOARCH=arm64 go build -ldflags="$(GO_LDFLAGS)" -o $(NAME)-darwin-arm64 ./cmd/shout
+
+# ── Go security scanning ─────────────────────────────────────
+
+.PHONY: go-security-gosec go-security-govulncheck go-security-trivy
+
+go-security-gosec:
+	gosec ./...
+
+go-security-govulncheck:
+	govulncheck ./...
+
+go-security-trivy:
+	trivy fs --scanners vuln,secret,misconfig .
+
+# ── Go shortcut targets (no platform selector) ───────────────
 
 .PHONY: fmt vet check coverage-html coverage-check
-.PHONY: gosec govulncheck trivy trivy-image security
-.PHONY: linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 all-platforms
 
 fmt:
 	go fmt ./...
@@ -113,37 +169,10 @@ coverage-check:
 		echo "OK: coverage meets 50% threshold"; \
 	fi
 
-gosec:
-	gosec ./...
-
-govulncheck:
-	govulncheck ./...
-
-trivy:
-	trivy fs --scanners vuln,secret,misconfig .
-
-trivy-image:
-	trivy image $(NAME):latest
-
-security: gosec govulncheck trivy
-
-linux-amd64:
-	GOOS=linux GOARCH=amd64 go build -ldflags="$(GO_LDFLAGS)" -o $(NAME)-linux-amd64 ./cmd/shout
-
-linux-arm64:
-	GOOS=linux GOARCH=arm64 go build -ldflags="$(GO_LDFLAGS)" -o $(NAME)-linux-arm64 ./cmd/shout
-
-darwin-amd64:
-	GOOS=darwin GOARCH=amd64 go build -ldflags="$(GO_LDFLAGS)" -o $(NAME)-darwin-amd64 ./cmd/shout
-
-darwin-arm64:
-	GOOS=darwin GOARCH=arm64 go build -ldflags="$(GO_LDFLAGS)" -o $(NAME)-darwin-arm64 ./cmd/shout
-
-all-platforms: linux-amd64 linux-arm64 darwin-amd64 darwin-arm64
-
 # ── Lisp targets (delegate to lisp/Makefile) ───────────────────
 
 .PHONY: lisp-build lisp-test lisp-clean lisp-coverage lisp-docker
+.PHONY: lisp-release lisp-security lisp-help
 
 lisp-build:
 	@$(MAKE) --no-print-directory -C lisp build
@@ -160,6 +189,23 @@ lisp-coverage:
 lisp-docker:
 	@$(MAKE) --no-print-directory -C lisp docker
 
+lisp-release:
+	@$(MAKE) --no-print-directory -C lisp release
+
+lisp-security:
+	@$(MAKE) --no-print-directory -C lisp security
+
+lisp-help:
+	@echo "Lisp targets:"
+	@echo "  build            Build standalone executable"
+	@echo "  test             Run test suite (prove framework)"
+	@echo "  clean            Remove build artifacts"
+	@echo "  coverage         Generate coverage report"
+	@echo "  docker           Build Docker image (linux/amd64)"
+	@echo "  release          Build release executable"
+	@echo "  security         Run sblint + trivy"
+	@echo ""
+
 # ── Version ────────────────────────────────────────────────────
 
 .PHONY: debug-version
@@ -174,34 +220,3 @@ debug-version:
 	@echo "BUILD_VCS_URL     $(BUILD_VCS_URL)"
 	@echo "BUILD_VCS_ID      $(BUILD_VCS_ID)"
 	@echo "BUILD_VCS_ID_DATE $(BUILD_VCS_ID_DATE)"
-
-# ── Help ───────────────────────────────────────────────────────
-
-.PHONY: help
-help:
-	@echo "Usage: make <target> [go|lisp]"
-	@echo ""
-	@echo "Common (supports platform selector):"
-	@echo "  build            Build binary (default: both)"
-	@echo "  test             Run tests (default: both)"
-	@echo "  clean            Remove build artifacts (default: both)"
-	@echo "  coverage         Generate coverage report (default: both)"
-	@echo "  docker           Build Docker image (default: both)"
-	@echo ""
-	@echo "Examples:"
-	@echo "  make build         Build both Go and Lisp"
-	@echo "  make build go      Build Go only"
-	@echo "  make test lisp     Test Lisp only"
-	@echo ""
-	@echo "Go only:"
-	@echo "  fmt              Run go fmt"
-	@echo "  vet              Run go vet"
-	@echo "  check            Run fmt + vet"
-	@echo "  coverage-html    Generate HTML coverage report"
-	@echo "  coverage-check   Verify coverage meets 50%% threshold"
-	@echo "  security         Run gosec + govulncheck + trivy"
-	@echo "  all-platforms    Cross-compile all platform variants"
-	@echo ""
-	@echo "Version:"
-	@echo "  debug-version    Print resolved version variables"
-	@echo "  Override: make VERSION=1.2.3 build"

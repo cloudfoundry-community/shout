@@ -100,7 +100,39 @@ debug-version:
 	@echo "BUILD_VCS_ID      = $(BUILD_VCS_ID)"
 	@echo "BUILD_VCS_URL     = $(BUILD_VCS_URL)"
 
+# Release build (no -dev prerelease tag)
+release: quicklisp libs version.lisp
+	$(LISPEXEC) compile.lisp
+	@echo "Lisp release binary built:"
+	@ls -lh $(NAME)
+
+# ── Security & Lint ──────────────────────────────────────────────
+
+lint:
+	@if command -v sblint >/dev/null 2>&1; then \
+		echo "Running sblint..."; \
+		sblint *.lisp; \
+	else \
+		echo "sblint not installed (install: ros install cxxxr/sblint)"; \
+		exit 1; \
+	fi
+
+trivy:
+	trivy fs --scanners vuln,secret,misconfig .
+
+trivy-image:
+	trivy image genesiscommunity/shout:ubuntu-jammy
+
+security:
+	@if command -v sblint >/dev/null 2>&1; then \
+		echo "Running sblint..."; \
+		sblint *.lisp; \
+	else \
+		echo "sblint not installed, skipping (install: ros install cxxxr/sblint)"; \
+	fi
+	trivy fs --scanners vuln,secret,misconfig .
+
 clean:
 	rm -rf $(BUILD) version.lisp
 
-.PHONY: default build test clean vendor docker debug-version coverage FORCE
+.PHONY: default build test clean vendor docker debug-version coverage release lint trivy trivy-image security FORCE
