@@ -1,0 +1,43 @@
+services:
+  shout:
+    build: .
+    ports:
+      - "7100:7100"
+    environment:
+      SHOUT_DATABASE: /data/shout.db
+      SHOUT_OPS_CREDS: shouty:abouty
+      SHOUT_ADMIN_CREDS: admin:sadmin
+    volumes:
+      - shout-db:/data
+    depends_on:
+      mock-slack:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:7100/info"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 120s
+
+  mock-slack:
+    build: ../mock-slack
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
+
+  test-client:
+    build: ../test-client
+    depends_on:
+      shout:
+        condition: service_healthy
+      mock-slack:
+        condition: service_healthy
+    profiles:
+      - test
+
+volumes:
+  shout-db:

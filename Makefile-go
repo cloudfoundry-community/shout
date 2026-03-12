@@ -2,9 +2,6 @@ NAME    := shout
 MODULE  := github.com/cloudfoundry-community/shout
 SHELL   := /bin/bash
 
-# vendor/ contains Quicklisp (Lisp) deps — tell Go to use module mode
-export GOFLAGS := -mod=mod
-
 # ── Version ──────────────────────────────────────────────────────
 # VERSION can be set explicitly (e.g. make VERSION=1.2.3) or is
 # derived from the latest git tag with patch auto-incremented.

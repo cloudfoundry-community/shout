@@ -1,10 +1,19 @@
 *.db
 *.pid
+.env
+
+# Go build artifacts
 /shout
 /shout-linux-*
 /shout-darwin-*
+/coverage.out
+/coverage.html
+
+# Lisp build artifacts
+/lisp/build
+/lisp/coverage
+/lisp/version.lisp
+/lisp/shout
+
+# Legacy
 /docker/shout
-/build
-/coverage
-/version.lisp
-.env
