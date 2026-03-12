@@ -86,9 +86,9 @@
                (err (cdr (assoc :error response))))
           (unless ok
             (api:shout-log "slack-app" "Slack API error: ~A" (or err "unknown error"))
-            (return-from send-api nil)))
-        (api:shout-log "slack-app" "notification sent (~Dms)"
-          (round (* 1000 (/ (- (get-internal-real-time) t0) internal-time-units-per-second)))))))
+            (return-from send-api nil))
+          (api:shout-log "slack-app" "notification sent (~Dms)"
+            (round (* 1000 (/ (- (get-internal-real-time) t0) internal-time-units-per-second)))))))
     (error (e)
       (api:shout-log "slack-app" "failed to send notification: ~A" e)
       nil)))
