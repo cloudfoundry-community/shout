@@ -13,6 +13,14 @@
       (if (null color) nil `(color . ,color))
       `(text . ,text))))
 
+(defun build-payload (&key text username icon attachments)
+  (remove-if #'null
+    (list
+      (when text     `(text . ,text))
+      (when username `(username . ,username))
+      (when icon     `(icon_url . ,icon))
+      (when attachments `(attachments . ,attachments)))))
+
 (defun send (text &key (icon     (env "SHOUT_BOTICON" *default-icon*))
                        (username (env "SHOUT_BOTNAME" *default-name*))
                        (webhook  (env "SHOUT_WEBHOOK" ""))
@@ -21,11 +29,12 @@
     (error "no webhook supplied to slack:send!"))
   (drakma:http-request webhook
                        :method :post
+                       :content-type "application/json"
                        :content (json:encode-json-to-string
-                                  `((text . ,text)
-                                    (username . ,username)
-                                    (icon_url . ,icon)
-                                    (attachments . ,attachments)))))
+                                  (build-payload :text text
+                                                 :username username
+                                                 :icon icon
+                                                 :attachments attachments))))
 
 (defun send-api (text &key (token   (env "SHOUT_SLACK_TOKEN" ""))
                             (channel (env "SHOUT_SLACK_CHANNEL" ""))
@@ -42,11 +51,12 @@
                          :content-type "application/json; charset=utf-8"
                          :additional-headers `(("Authorization" . ,(format nil "Bearer ~A" token)))
                          :content (json:encode-json-to-string
-                                    `((channel . ,channel)
-                                      (text . ,text)
-                                      (username . ,username)
-                                      (icon_url . ,icon)
-                                      (attachments . ,attachments)))
+                                    (append
+                                      `((channel . ,channel))
+                                      (build-payload :text text
+                                                     :username username
+                                                     :icon icon
+                                                     :attachments attachments)))
                          :connection-timeout 30)
     (declare (ignore status))
     (let* ((response (json:decode-json-from-string
