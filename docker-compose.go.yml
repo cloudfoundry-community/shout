@@ -12,6 +12,8 @@ services:
       - --expiry=0
     ports:
       - "7109:7109"
+    environment:
+      SHOUT_SLACK_API_URL: "http://mock-slack:8080/api/chat.postMessage"
     volumes:
       - shout-data:/data
       - ./rules.test.yml:/rules/rules.yml:ro

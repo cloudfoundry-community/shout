@@ -16,22 +16,27 @@ import (
 type SlackAppHandler struct {
 	defaultToken   string
 	defaultChannel string
+	apiURL         string
 }
 
 // NewSlackAppHandler creates a SlackAppHandler with defaults from environment variables.
+// Set SHOUT_SLACK_API_URL to override the Slack API endpoint (useful for testing).
 func NewSlackAppHandler() *SlackAppHandler {
+	apiURL := os.Getenv("SHOUT_SLACK_API_URL")
+	if apiURL == "" {
+		apiURL = "https://slack.com/api/chat.postMessage"
+	}
 	return &SlackAppHandler{
 		defaultToken:   os.Getenv("SHOUT_SLACK_TOKEN"),
 		defaultChannel: os.Getenv("SHOUT_SLACK_CHANNEL"),
+		apiURL:         apiURL,
 	}
 }
 
 func (s *SlackAppHandler) Name() string { return "slack-app" }
 
-const slackAPIURL = "https://slack.com/api/chat.postMessage"
-
 func (s *SlackAppHandler) Send(ctx context.Context, args map[string]string) error {
-	return s.sendToURL(ctx, slackAPIURL, args)
+	return s.sendToURL(ctx, s.apiURL, args)
 }
 
 func (s *SlackAppHandler) sendToURL(ctx context.Context, url string, args map[string]string) error {

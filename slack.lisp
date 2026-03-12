@@ -37,7 +37,7 @@
   (when (equal channel "")
     (error "no channel supplied to slack:send-api! (set SHOUT_SLACK_CHANNEL or pass :channel)"))
   (multiple-value-bind (body status)
-    (drakma:http-request "https://slack.com/api/chat.postMessage"
+    (drakma:http-request (env "SHOUT_SLACK_API_URL" "https://slack.com/api/chat.postMessage")
                          :method :post
                          :content-type "application/json; charset=utf-8"
                          :additional-headers `(("Authorization" . ,(format nil "Bearer ~A" token)))
