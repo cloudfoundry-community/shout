@@ -39,10 +39,11 @@ go lisp:
 
 # ── Common targets ─────────────────────────────────────────────
 
-.PHONY: build test clean coverage docker release security help
+.PHONY: build test check clean coverage docker release security help
 
 build:    $(call GO_TARGETS,go-build)    $(call LISP_TARGETS,lisp-build)
 test:     $(call GO_TARGETS,go-test)     $(call LISP_TARGETS,lisp-test)
+check:    $(call GO_TARGETS,go-check)    $(call LISP_TARGETS,lisp-check)
 clean:    $(call GO_TARGETS,go-clean)    $(call LISP_TARGETS,lisp-clean)
 coverage: $(call GO_TARGETS,go-coverage) $(call LISP_TARGETS,lisp-coverage)
 docker:   $(call GO_TARGETS,go-docker)   $(call LISP_TARGETS,lisp-docker)
@@ -106,10 +107,8 @@ go-help:
 	@echo "  coverage-check   Verify coverage meets 50%% threshold"
 	@echo "  docker           Build Docker image"
 	@echo "  release          Cross-compile all platform binaries"
+	@echo "  check            Run go fmt + go vet"
 	@echo "  security         Run gosec + govulncheck + trivy"
-	@echo "  fmt              Run go fmt"
-	@echo "  vet              Run go vet"
-	@echo "  check            Run fmt + vet"
 	@echo "  debug-version    Print resolved version variables"
 	@echo ""
 
@@ -145,15 +144,7 @@ go-security-trivy:
 
 # ── Go shortcut targets (no platform selector) ───────────────
 
-.PHONY: fmt vet check coverage-html coverage-check
-
-fmt:
-	go fmt ./...
-
-vet:
-	go vet ./...
-
-check: fmt vet
+.PHONY: coverage-html coverage-check
 
 coverage-html: go-coverage
 	go tool cover -html=coverage.out -o coverage.html
@@ -171,7 +162,7 @@ coverage-check:
 
 # ── Lisp targets (delegate to lisp/Makefile) ───────────────────
 
-.PHONY: lisp-build lisp-test lisp-clean lisp-coverage lisp-docker
+.PHONY: lisp-build lisp-test lisp-check lisp-clean lisp-coverage lisp-docker
 .PHONY: lisp-release lisp-security lisp-help
 
 lisp-build:
@@ -179,6 +170,9 @@ lisp-build:
 
 lisp-test:
 	@$(MAKE) --no-print-directory -C lisp test
+
+lisp-check:
+	@$(MAKE) --no-print-directory -C lisp check
 
 lisp-clean:
 	@$(MAKE) --no-print-directory -C lisp clean
@@ -199,6 +193,7 @@ lisp-help:
 	@echo "Lisp targets:"
 	@echo "  build            Build standalone executable"
 	@echo "  test             Run test suite (prove framework)"
+	@echo "  check            Run sblint static analysis"
 	@echo "  clean            Remove build artifacts"
 	@echo "  coverage         Generate coverage report"
 	@echo "  docker           Build Docker image (linux/amd64)"

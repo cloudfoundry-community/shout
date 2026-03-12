@@ -459,6 +459,74 @@ Note that the `(when * ...)` clause doesn't trigger during business
 hours because Shout! stops evaluating WHEN clauses after the first
 match.
 
+Building & Development
+----------------------
+
+Shout! has two implementations: the original Common Lisp (SBCL) version
+in `lisp/`, and a Go rewrite at the repository root. A unified Makefile
+lets you build, test, and manage both from a single interface.
+
+### Quick Start
+
+    make build                # build both Go and Lisp
+    make build go             # build Go only
+    make build lisp           # build Lisp only
+
+The `go` / `lisp` selector works with all targets:
+
+| Command | Description |
+|---|---|
+| `make build [go\|lisp]` | Build binaries |
+| `make test [go\|lisp]` | Run test suites |
+| `make check [go\|lisp]` | Static analysis (Go: fmt + vet, Lisp: sblint) |
+| `make clean [go\|lisp]` | Remove build artifacts |
+| `make coverage [go\|lisp]` | Run coverage analysis |
+| `make release [go\|lisp]` | Build release binaries (cross-compile for Go) |
+| `make security [go\|lisp]` | Security scanning (Go: gosec + govulncheck + trivy, Lisp: sblint + trivy) |
+| `make docker [go\|lisp]` | Build Docker image |
+| `make help [go\|lisp]` | Show available targets |
+
+Omitting the selector runs both implementations.
+
+### Lisp Standalone
+
+The Lisp implementation can also be built independently:
+
+    cd lisp
+    make build
+    make test
+    make check
+
+### Prerequisites
+
+**Go**: Go 1.26+
+
+**Lisp**: SBCL (built with `--fancy` for core compression). Install via
+Homebrew (`brew install sbcl`) or [Roswell pre-built binaries][roswell].
+
+**Static analysis** (`make check lisp`): Requires [sblint][sblint] via
+[Roswell][roswell-install]:
+
+    brew install roswell
+    ros install cxxxr/sblint
+
+**Security scanning** (`make security`): Requires [trivy][trivy]. Go
+targets also use [gosec][gosec] and [govulncheck][govulncheck].
+
+### Versioning
+
+Version is derived from the latest git tag with patch auto-incremented.
+Override with `make build VERSION=1.2.3`. Dev builds automatically get
+a `-dev` prerelease suffix. Use `make debug-version` to inspect resolved
+version variables.
+
+[roswell]:         https://github.com/roswell/sbcl_bin/releases
+[roswell-install]: https://github.com/roswell/roswell
+[sblint]:          https://github.com/cxxxr/sblint
+[trivy]:           https://github.com/aquasecurity/trivy
+[gosec]:           https://github.com/securego/gosec
+[govulncheck]:     https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck
+
 How Do I Contribute?
 --------------------
 

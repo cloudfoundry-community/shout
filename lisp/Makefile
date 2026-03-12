@@ -108,14 +108,18 @@ release: quicklisp libs version.lisp
 
 # ── Security & Lint ──────────────────────────────────────────────
 
-lint:
-	@if command -v sblint >/dev/null 2>&1; then \
+check:
+	@SBLINT=$$(command -v sblint 2>/dev/null || echo $$HOME/.roswell/bin/sblint); \
+	if [ -x "$$SBLINT" ]; then \
 		echo "Running sblint..."; \
-		sblint *.lisp; \
+		CL_SOURCE_REGISTRY="$$(pwd)/build/quicklisp/dists/quicklisp/software//:$$(pwd)//" \
+			"$$SBLINT" shout.asd; \
 	else \
 		echo "sblint not installed (install: ros install cxxxr/sblint)"; \
 		exit 1; \
 	fi
+
+lint: check
 
 trivy:
 	trivy fs --scanners vuln,secret,misconfig .
@@ -124,15 +128,19 @@ trivy-image:
 	trivy image genesiscommunity/shout:ubuntu-jammy
 
 security:
-	@if command -v sblint >/dev/null 2>&1; then \
+	@SBLINT=$$(command -v sblint 2>/dev/null || echo $$HOME/.roswell/bin/sblint); \
+	if [ -x "$$SBLINT" ]; then \
 		echo "Running sblint..."; \
-		sblint *.lisp; \
+		CL_SOURCE_REGISTRY="$$(pwd)/build/quicklisp/dists/quicklisp/software//:$$(pwd)//" \
+			"$$SBLINT" shout.asd; \
 	else \
 		echo "sblint not installed, skipping (install: ros install cxxxr/sblint)"; \
 	fi
 	trivy fs --scanners vuln,secret,misconfig .
+	@echo ""
+	@echo "Note: 'make check' runs sblint independently (fails if not installed)"
 
 clean:
 	rm -rf $(BUILD) version.lisp
 
-.PHONY: default build test clean vendor docker debug-version coverage release lint trivy trivy-image security FORCE
+.PHONY: default build test check lint clean vendor docker debug-version coverage release trivy trivy-image security FORCE
