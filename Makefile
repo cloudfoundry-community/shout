@@ -213,6 +213,7 @@ lisp-help:
 	@echo "  docker           Build Docker image (linux/amd64)"
 	@echo "  release          Build release executable"
 	@echo "  security         Run sblint + trivy"
+	@echo "  debug-version    Print resolved version variables"
 	@echo ""
 
 # ── Version ────────────────────────────────────────────────────
