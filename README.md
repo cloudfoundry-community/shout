@@ -480,13 +480,20 @@ The `go` / `lisp` selector works with all targets:
 | `make test [go\|lisp]` | Run test suites |
 | `make check [go\|lisp]` | Static analysis (Go: fmt + vet, Lisp: sblint) |
 | `make clean [go\|lisp]` | Remove build artifacts |
-| `make coverage [go\|lisp]` | Run coverage analysis |
+| `make coverage [go\|lisp]` | Coverage gate (default 50%, `COVERAGE_MIN=N`, `COVERAGE_REPORT=full` for HTML) |
 | `make release [go\|lisp]` | Build release binaries (Go: cross-compile all platforms, Lisp: no -dev tag) |
 | `make security [go\|lisp]` | Security scanning (Go: gosec + govulncheck + trivy, Lisp: sblint + trivy) |
 | `make docker [go\|lisp]` | Build Docker image |
 | `make help [go\|lisp]` | Show available targets |
 
 Omitting the selector runs both implementations.
+
+### Coverage
+
+    make coverage go                        # gate at 50% (default)
+    make coverage go COVERAGE_MIN=30        # gate at 30%
+    make coverage go COVERAGE_MIN=0         # show percentage, no gate
+    make coverage go COVERAGE_REPORT=full   # full HTML report instead of gate
 
 ### Lisp Standalone
 
