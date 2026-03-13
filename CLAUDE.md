@@ -4,183 +4,168 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Layout
 
-This is a multi-project workspace for **Shout!**, a notifications gateway server for Concourse CI/CD pipelines, written in Common Lisp (SBCL).
+This is a multi-project workspace for **Shout!**, a notifications gateway server for Concourse CI/CD pipelines. The repository contains two implementations: a Go rewrite (at the repo root) and the original Common Lisp version (in `lisp/`).
+
+### Workspace Level
 
 | Directory | Purpose |
 |---|---|
-| `shout/` | Main Shout! server application |
+| `shout/` | Main Shout! server (this repo — Go + Lisp) |
 | `shout-resource/` | Concourse CI resource type plugin (shell scripts) |
 | `shout-boshrelease/` | BOSH release for production deployment |
 | `shout-docker-image/` | Base Docker image for Common Lisp |
-| `sbcl/` | SBCL compiler source — built from source for multi-platform support (cross-platform builds are non-trivial and error-prone) |
-| `sbcl-install/` | SBCL installation directory |
+| `concourse-dockerfiles/` | Concourse CI base images (ubuntu-noble, concourse-cl) |
+
+### This Repository
+
+```
+├── cmd/shout/             Go entry point (main.go)
+├── internal/              Go internal packages
+│   ├── api/               HTTP server (net/http)
+│   ├── clock/             Clock interface for testable time
+│   ├── engine/            Rules engine (YAML + expr-lang)
+│   ├── notify/            Notification backends (Slack, email)
+│   └── state/             Per-topic state tracking
+├── pkg/version/           Go semver version package
+├── lisp/                  Common Lisp implementation
+│   ├── *.lisp             Source files (api, rules, slack, shout, packages)
+│   ├── test/              Lisp test suite (prove framework)
+│   ├── vendor/quicklisp/  Vendored CL dependencies for air-gapped builds
+│   ├── Makefile           Standalone Lisp build system
+│   └── Dockerfile         Lisp Docker image
+├── mock-slack/            Mock Slack webhook receiver (for integration tests)
+├── test-client/           Integration test runner (shell scripts)
+├── docs/                  Documentation (Slack app setup, etc.)
+├── ci/                    CI scripts (version)
+├── Makefile               Unified build system (platform selector)
+├── version.mk             Shared semver logic (included by both Makefiles)
+├── Dockerfile             Go Docker image
+├── docker-compose.yml     Go integration test environment
+├── rules.example.yml      Go rules file example
+└── rules.test.yml         Go integration test rules
+```
 
 ## Build & Development Commands
 
-All commands run from `shout/`:
+A unified Makefile supports both implementations via a platform selector:
 
 ```bash
-make quicklisp   # Set up Quicklisp (uses vendored deps if available, otherwise downloads)
-make libs        # Install Lisp dependencies
-make shout       # Build executable (requires quicklisp + libs)
-make test        # Run test suite (prove framework)
-make coverage    # Run coverage analysis
-make docker      # Build Docker image (linux/amd64)
-make vendor      # Refresh vendored dependencies (run on a connected machine)
-make clean       # Remove build artifacts
+make build                # build both Go and Lisp
+make build go             # build Go only
+make build lisp           # build Lisp only
 ```
 
-### Go Rewrite (branch `norm/go-shout`)
+The `go` / `lisp` selector works with all targets:
+
+| Command | Description |
+|---|---|
+| `make build [go\|lisp]` | Build binaries |
+| `make test [go\|lisp]` | Run test suites |
+| `make check [go\|lisp]` | Static analysis (Go: fmt + vet, Lisp: sblint) |
+| `make clean [go\|lisp]` | Remove build artifacts |
+| `make coverage [go\|lisp]` | Coverage gate (default 50%, COVERAGE_MIN=N, COVERAGE_REPORT=full for HTML) |
+| `make release [go\|lisp]` | Build release binaries (Go: cross-compile all platforms, Lisp: no -dev tag) |
+| `make security [go\|lisp]` | Security scanning (Go: gosec + govulncheck + trivy, Lisp: sblint + trivy) |
+| `make docker [go\|lisp]` | Build Docker image |
+| `make help [go\|lisp]` | Show available targets |
+
+### Go-only shortcuts (no platform selector needed)
 
 ```bash
-make -f Makefile.go build          # Build for current platform
-make -f Makefile.go test           # Run tests
-make -f Makefile.go all-platforms  # Cross-compile linux/darwin amd64/arm64
+make debug-version        # Print resolved version variables
 ```
 
-Run in development without compiling:
+### Coverage variables
+
 ```bash
-sbcl --script run.lisp
+make coverage go                        # gate at 50% (default)
+make coverage go COVERAGE_MIN=30        # gate at 30%
+make coverage go COVERAGE_MIN=0         # show percentage, no gate
+make coverage go COVERAGE_REPORT=full   # full HTML report instead of gate
 ```
+
+### Lisp standalone (from lisp/ directory)
+
+```bash
+cd lisp
+make build                # Build standalone executable
+make test                 # Run prove test suite
+make check                # Run sblint static analysis
+sbcl --script run.lisp    # Run in development without compiling
+```
+
+### Versioning
+
+Both implementations share `version.mk` for semver resolution from git tags. Patch is auto-incremented from the latest tag. Override with `VERSION=x.y.z`. Dev builds get a `-dev` prerelease suffix automatically.
+
+- Go: version injected via `-ldflags -X` at build time
+- Lisp: `version.lisp` generated from git tags (auto-generated, gitignored)
 
 ## Architecture
 
-### Packages (shout/packages.lisp)
+### Go Implementation
+
+- **Rules engine**: YAML rules files with [expr-lang/expr](https://github.com/expr-lang/expr) for condition evaluation
+- **API**: Same REST endpoints as Lisp version — Concourse resource works unchanged
+- **FOR blocks**: All-fire semantics (multiple FORs can match); first-match-wins within each FOR's WHENs
+- **Thread safety**: `engineMu sync.RWMutex` protects engine reads/writes
+- **State expiry**: `--expiry` flag / `SHOUT_EXPIRY` env (default 86400s, 0=disabled)
+- **Notifications**: Slack (webhook), email (net/smtp) — plugin architecture for adding more
+- **HTTP client**: `http.Client{Timeout: 30s}` (never uses `http.DefaultClient`)
+- **Dependencies**: `expr-lang/expr`, `gopkg.in/yaml.v3` (vendored via `go mod vendor`)
+
+### Lisp Implementation (lisp/)
+
+#### Packages (lisp/packages.lisp)
 
 - **`api`** — HTTP server (Hunchentoot). Endpoints: `/info`, `/events`, `/announcements`, `/rules`, `/state`, `/states`. Entry point: `api:run`.
 - **`rules`** — Custom DSL parser and evaluator for notification routing rules. Key exports: `rules:load/rules`, `rules:eval/rules`, `rules:register-plugin`.
 - **`slack`** — Slack webhook notification handler. Exports: `slack:send`, `slack:attach`.
 - **`shout`** — Main entry point and daemon management. Export: `shout:shout`.
 
-### Event Model
+#### Rules DSL
 
-Events carry a `topic`, `ok` status, `message`, `link`, and optional metadata. The server tracks per-topic state transitions (working/broken/fixed) and only sends notifications on transitions or reminder intervals.
-
-### Rules DSL
-
-The rules engine (`shout/rules.lisp`) implements a Lisp-like DSL with:
+The rules engine (`lisp/rules.lisp`) implements a Lisp-like DSL with:
 - Topic matching: literal strings, `*` wildcard, `(is "exact")`, `(matches "regex")` (cl-ppcre)
 - Time conditions: `(on weekdays)`, `(from 0800 am to 0500 pm)`, `(after ...)`, `(before ...)`
 - Logic: `and`, `or`, `not`, `if`
 - Variables: `set`/`value`/`lookup` with map support
 - Handlers: `slack` (extensible via `register-plugin`)
 - String interpolation: `$topic`, `$status`, `$message`, `$link`, `$[metadata-key]`
-- **Deprecated**: `concat` appends a trailing newline after each element; this will change in a future major release
+- **Deprecated**: `concat` appends a trailing newline after each element
 
-All matching FOR blocks fire (not first-match-wins) — this allows multiple notification channels for one topic. WHEN clauses within a FOR use first-match-wins semantics.
+All matching FOR blocks fire (not first-match-wins). WHEN clauses within a FOR use first-match-wins semantics.
 
-### Notification Plugin System
+#### Build Scripts (lisp/)
 
-#### How It Works
+- **`compile.lisp`** — Loads Quicklisp, registers with ASDF, loads `:shout`, dumps compressed standalone executable via `save-lisp-and-die`.
+- **`test.lisp`** — Same setup, then runs `:shout-test` with `prove:run`.
+- **`run.lisp`** — Runs Shout! directly without compiling (development mode).
+- **`cover.lisp`** — Runs tests with code coverage instrumentation.
 
-Notification backends are registered as named functions in `rules.lisp`:
+#### Vendored Dependencies & Air-Gapped Builds
 
-- **`register-plugin`** — Stores a handler function in the `*plugin-handlers*` alist, keyed by symbol. Called at startup in `api:run`.
-- **`dispatch-to-plugin`** — Looks up and calls a handler by name during rule evaluation. Triggered when a plugin name (e.g., `slack`) appears in a WHEN clause body.
-- **`registered-plugin?`** — Predicate used during rule parsing to distinguish plugin calls from DSL keywords.
+Quicklisp dependencies are vendored in `lisp/vendor/quicklisp/` for air-gapped environments.
 
-Currently only one plugin is registered: `slack`, which wraps `slack:send` with argument extraction from the rules DSL.
+- When `vendor/quicklisp/` exists, `make quicklisp` and `make libs` copy from vendor instead of downloading.
+- To refresh vendored dependencies on a connected machine: `make vendor`
+- The vendored directory contains all 32 transitive dependencies (~21MB).
 
-#### Thread Safety Model
+#### Common Lisp Toolchain
 
-**Plugin functions are stateless and thread-safe.** `slack:send` uses only local variables and `drakma:http-request` creates independent socket connections per call. New plugins (email, SMS, pager) do **not** need their own locks.
+- **SBCL** — Compiler and runtime. Must be built with `--fancy` for core compression. Homebrew and Roswell `sbcl_bin` include this.
+- **ASDF** — Build system. `.asd` files declare dependencies and source file load order.
+- **Quicklisp** — Package manager. Downloads libraries from the Quicklisp dist server.
+- **Roswell** — CL implementation manager. Provides pre-built SBCL binaries at github.com/roswell/sbcl_bin/releases.
+- **sblint** — Static analysis tool wrapping SBCL compiler diagnostics. Install via `ros install cxxxr/sblint`. Binary at `~/.roswell/bin/sblint`.
 
-**However**, plugins currently execute inside both locks:
+#### Dependencies (via Quicklisp)
 
-```
-POST /events
-  → with-lock-held (*states-lock*)     ← held during entire request
-      → set-state → ingest-event → trigger-edge
-          → notify-about-state
-              → with-lock-held (*rules-lock*)   ← also held
-                  → rules:eval/rules
-                      → dispatch-to-plugin → slack:send  ← HTTP call inside BOTH locks
-```
+`hunchentoot` (HTTP server), `drakma` (HTTP client), `cl-json` (JSON), `cl-ppcre` (regex), `daemon` (daemonization), `prove` (testing).
 
-The background scan loop has the same pattern — reminder notifications fire inside `*states-lock*`.
+### Event Model
 
-**Implications:** All notifications are serialized. A slow webhook (e.g., 3s timeout) blocks all other state updates and the scan loop. Adding multiple notification backends on the same event compounds the problem. A future optimization could move plugin dispatch outside the lock scope (queue notifications, release locks, then send), since plugins only need their evaluated arguments, not shared state.
-
-#### Adding a New Notification Backend
-
-1. **Create a new file** (e.g., `email.lisp`) with a package and send function:
-
-```lisp
-;;; email.lisp — Email notification plugin for Shout!
-(in-package :email)
-
-(defun env (name default)
-  (or (sb-unix::posix-getenv name) default))
-
-(defun send (body &key (to      (env "SHOUT_EMAIL_TO" ""))
-                       (from    (env "SHOUT_EMAIL_FROM" "shout@example.com"))
-                       (subject "Shout! Notification")
-                       (smtp    (env "SHOUT_SMTP_HOST" "localhost")))
-  (when (equal to "")
-    (api:shout-log "email" "no recipient configured, skipping notification")
-    (return-from send nil))
-  (handler-case
-    ;; Replace with actual SMTP implementation (e.g., cl-smtp)
-    (progn
-      (api:shout-log "email" "sending to ~A via ~A" to smtp)
-      ;; ... send email here ...
-      )
-    (error (e)
-      (api:shout-log "email" "failed to send: ~A" e)
-      nil)))
-```
-
-2. **Add the package** to `packages.lisp`:
-
-```lisp
-(defpackage :email
-  (:use :cl)
-  (:export :send))
-```
-
-3. **Add the file** to `shout.asd` components:
-
-```lisp
-(:file "email" :depends-on ("packages"))
-```
-
-4. **Register the plugin** in `api:run` (in `api.lisp`, alongside the Slack registration):
-
-```lisp
-(rules:register-plugin
-  'rules::email
-  #'(lambda (args)
-      (email:send
-        (arg args :body)
-        :to      (arg args :to)
-        :subject (arg args :subject))))
-```
-
-5. **Use it in rules**:
-
-```
-(for *)
-  (when (broken)
-    (email :to "oncall@example.com"
-           :subject "$topic is $status"
-           :body "$message"))
-```
-
-6. **Add any new Quicklisp dependency** (e.g., `cl-smtp`) to `shout.asd` `:depends-on` and run `make vendor` to refresh vendored deps for air-gapped builds.
-
-#### Where Configuration Lives
-
-Plugin configuration follows the existing pattern of environment variables:
-
-| Layer | File | Purpose |
-|-------|------|---------|
-| Defaults | Plugin source (e.g., `slack.lisp`) | `env` calls with fallback values |
-| Docker | `Dockerfile` `ENV` directives | Build-time defaults |
-| Compose | `docker-compose.yml` `environment:` | Development overrides |
-| BOSH | `shout-boshrelease/jobs/shout/spec` | Production deployment properties |
-| Rules DSL | Rules file loaded via `/rules` | Per-notification overrides (e.g., `:webhook`) |
-
-Environment variables override defaults; per-notification keyword arguments in the rules DSL override everything.
+Events carry a `topic`, `ok` status, `message`, `link`, and optional metadata. The server tracks per-topic state transitions (working/broken/fixed) and only sends notifications on transitions or reminder intervals.
 
 ### Authentication
 
@@ -193,38 +178,99 @@ HTTP Basic Auth with two tiers:
 
 `SHOUT_PORT` (default 7109), `SHOUT_DATABASE` (default `/var/db/shout.db`), `SHOUT_PIDFILE`, `SHOUT_IT_OUT_LOUD` (daemon mode), `SHOUT_WEBHOOK`, `SHOUT_BOTNAME`, `SHOUT_BOTICON`.
 
-### Common Lisp Toolchain
+### Notification Plugin System (Lisp)
 
-- **SBCL** (Steel Bank Common Lisp) — The Common Lisp compiler and runtime. Compiles Lisp to native machine code. `sb-ext:save-lisp-and-die` dumps the entire runtime + application into a single standalone executable (see `compile.lisp`). Requires `--fancy` build for core compression support.
-- **ASDF** (Another System Definition Facility) — The Common Lisp build system (analogous to Make for C). `.asd` files (`shout.asd`, `shout-test.asd`) declare system metadata, dependencies, and source file load order. ASDF compiles and loads systems but does not fetch packages from the internet. It finds systems via `asdf:*central-registry*` (list of directories to search for `.asd` files).
-- **Quicklisp** — The Common Lisp package manager (analogous to pip or npm). Downloads libraries and their transitive dependencies from the Quicklisp dist server. Integrates with ASDF — once Quicklisp fetches a library, ASDF handles building it. Setup via `(load "build/quicklisp/setup.lisp")`.
-- **Roswell** — A Common Lisp implementation manager (analogous to nvm or pyenv). Its `sbcl_bin` project provides pre-built SBCL binaries with `--fancy` for all platforms (linux/darwin, amd64/arm64) at github.com/roswell/sbcl_bin/releases.
+#### How It Works
 
-### Dependencies (via Quicklisp)
+Notification backends are registered as named functions in `rules.lisp`:
 
-`hunchentoot` (HTTP server), `drakma` (HTTP client), `cl-json` (JSON), `daemon` (daemonization), `prove` (testing).
+- **`register-plugin`** — Stores a handler function in the `*plugin-handlers*` alist, keyed by symbol.
+- **`dispatch-to-plugin`** — Looks up and calls a handler by name during rule evaluation.
+- **`registered-plugin?`** — Predicate used during rule parsing to distinguish plugin calls from DSL keywords.
 
-### Build Scripts
+Currently only one plugin is registered: `slack`, which wraps `slack:send` with argument extraction from the rules DSL.
 
-- **`compile.lisp`** — Loads Quicklisp, registers the current directory with ASDF, loads the `:shout` system, and dumps a compressed standalone executable via `save-lisp-and-die`.
-- **`test.lisp`** — Same setup, then runs the `:shout-test` system with `prove:run`.
-- **`run.lisp`** — Runs Shout! directly without compiling to an executable (development mode).
-- **`cover.lisp`** — Runs tests with code coverage instrumentation.
+#### Thread Safety Model
 
-### Vendored Dependencies & Air-Gapped Builds
+Plugin functions are stateless and thread-safe. However, plugins execute inside both `*states-lock*` and `*rules-lock*`, so all notifications are serialized. A slow webhook blocks other state updates and the scan loop. A future optimization could queue notifications and send after releasing locks.
 
-Quicklisp dependencies are vendored in `vendor/quicklisp/` for air-gapped environments where no internet access is available during build/deployment.
+#### Adding a New Notification Backend (Lisp)
 
-- When `vendor/quicklisp/` exists, `make quicklisp` and `make libs` copy from vendor instead of downloading.
-- To refresh vendored dependencies on a connected machine: `make vendor`
-- The vendored directory contains all 32 transitive dependencies (~21MB).
+1. Create a new file (e.g., `email.lisp`) with a package and send function
+2. Add the package to `packages.lisp`
+3. Add the file to `shout.asd` components
+4. Register the plugin in `api:run` (alongside the Slack registration)
+5. Use it in rules: `(email :to "oncall@example.com" :subject "$topic is $status" :body "$message")`
+6. Add any new Quicklisp dependency to `shout.asd` `:depends-on` and run `make vendor`
 
-For air-gapped deployment, the repo (with `vendor/quicklisp/`) and an SBCL binary are the only external artifacts needed. These can be transferred to internal object storage (Minio, Artifactory) for use in disconnected environments.
+#### Where Configuration Lives
 
-### SBCL Requirements
+| Layer | File | Purpose |
+|-------|------|---------|
+| Defaults | Plugin source (e.g., `slack.lisp`) | `env` calls with fallback values |
+| Docker | `Dockerfile` `ENV` directives | Build-time defaults |
+| Compose | `docker-compose.yml` `environment:` | Development overrides |
+| BOSH | `shout-boshrelease/jobs/shout/spec` | Production deployment properties |
+| Rules DSL | Rules file loaded via `/rules` | Per-notification overrides (e.g., `:webhook`) |
 
-SBCL must be built with `--fancy` or `--with-sb-core-compression` for compressed core images. Homebrew SBCL and Roswell `sbcl_bin` releases include these features. Default SourceForge binaries do not.
+Environment variables override defaults; per-notification keyword arguments in the rules DSL override everything.
 
 ## Testing
 
-Tests live in `shout/test/` and use the `prove` framework. Test packages are defined in `shout/test/packages.lisp`. The test system is named `:shout-test` and runs via `prove:run`.
+### Go
+
+Tests use the standard `testing` package with race detection. 78.7% coverage (engine 95.7%, notify 92%, state 87.8%, clock 100%, api 69%).
+
+```bash
+make test go              # fmt + vet + tests with -race
+make coverage go          # gate at COVERAGE_MIN (default 50%)
+```
+
+### Lisp
+
+Tests live in `lisp/test/` and use the `prove` framework. Test system is `:shout-test`.
+
+```bash
+make test lisp            # run prove test suite
+make coverage lisp        # gate at COVERAGE_MIN (default 50%)
+```
+
+### Integration Tests
+
+Integration tests run against a live Shout! instance and mock-slack (no Docker required):
+
+```bash
+# Terminal 1: start mock-slack
+python3 mock-slack/server.py
+
+# Terminal 2: start Shout! (Go or Lisp)
+./shout --rules rules.test.yml           # Go
+cd lisp && sbcl --script run.lisp        # Lisp
+
+# Terminal 3: run tests
+./test-shout-slack.sh                    # all tests (webhook + slack-app)
+./test-shout-slack.sh --test webhook     # webhook handler only
+./test-shout-slack.sh --test slack-app   # slack-app handler only
+```
+
+The test script auto-detects Go vs Lisp via `/info` and uses the appropriate rules format.
+
+For testing against real Slack (no mock):
+```bash
+./test-shout-slack.sh --webhook https://hooks.slack.com/...
+./test-shout-slack.sh --token xoxb-... --channel '#test'
+```
+
+Docker Compose testbeds also exist (`docker-compose.yml` for Go, `lisp/docker-compose.yml` for Lisp) but are optional.
+
+### mock-slack
+
+A lightweight Python HTTP server in `mock-slack/` that captures webhook payloads:
+- `POST /` — Receives Slack webhook payloads
+- `POST /api/chat.postMessage` — Receives Slack Web API calls
+- `GET /messages` — Returns all captured payloads as JSON
+- `DELETE /messages` — Clears captured payloads
+
+### Test State Machine
+
+Shout! tracks per-topic state. The first event on a topic establishes a baseline without notifying. Only state transitions (working->broken, broken->fixed) trigger notifications. Duplicate events in the same state are suppressed.

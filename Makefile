@@ -2,6 +2,12 @@ NAME   := shout
 MODULE := github.com/cloudfoundry-community/shout
 SHELL  := /bin/bash
 
+# Coverage settings
+#   COVERAGE_MIN    — gate threshold (default 50, set 0 to disable gate)
+#   COVERAGE_REPORT — report type: full (HTML report), default is gate
+COVERAGE_MIN    ?= 50
+COVERAGE_REPORT ?=
+
 include version.mk
 
 # ── Platform selection ──────────────────────────────────────────
@@ -82,8 +88,21 @@ go-check:
 	go vet ./...
 
 go-coverage:
-	go test -coverprofile=coverage.out ./cmd/... ./internal/... ./pkg/...
-	go tool cover -func=coverage.out
+	@go test -coverprofile=coverage.out ./cmd/... ./internal/... ./pkg/...
+ifeq ($(COVERAGE_REPORT),full)
+	@go tool cover -func=coverage.out
+	@go tool cover -html=coverage.out -o coverage.html
+	@echo "HTML report: coverage.html"
+else
+	@TOTAL=$$(go tool cover -func=coverage.out | grep ^total: | awk '{print $$3}' | tr -d '%'); \
+	echo "Total coverage: $${TOTAL}%"; \
+	if [ $(COVERAGE_MIN) -gt 0 ] && [ $$(echo "$${TOTAL} < $(COVERAGE_MIN)" | bc) -eq 1 ]; then \
+		echo "FAIL: coverage $${TOTAL}% is below $(COVERAGE_MIN)% threshold"; \
+		exit 1; \
+	else \
+		echo "OK: coverage meets $(COVERAGE_MIN)% threshold"; \
+	fi
+endif
 
 go-clean:
 	rm -f $(NAME) $(NAME)-linux-* $(NAME)-darwin-* coverage.out coverage.html
@@ -102,9 +121,7 @@ go-help:
 	@echo "  build            Build binary for current platform"
 	@echo "  test             Run fmt + vet + tests with race detection"
 	@echo "  clean            Remove build artifacts and coverage files"
-	@echo "  coverage         Run tests and print coverage by function"
-	@echo "  coverage-html    Generate HTML coverage report"
-	@echo "  coverage-check   Verify coverage meets 50%% threshold"
+	@echo "  coverage         Gate at COVERAGE_MIN=$(COVERAGE_MIN)% (COVERAGE_REPORT=full for HTML)"
 	@echo "  docker           Build Docker image"
 	@echo "  release          Cross-compile all platform binaries"
 	@echo "  check            Run go fmt + go vet"
@@ -142,24 +159,6 @@ go-security-govulncheck:
 go-security-trivy:
 	trivy fs --scanners vuln,secret,misconfig .
 
-# ── Go shortcut targets (no platform selector) ───────────────
-
-.PHONY: coverage-html coverage-check
-
-coverage-html: go-coverage
-	go tool cover -html=coverage.out -o coverage.html
-
-coverage-check:
-	@go test -coverprofile=coverage.out ./cmd/... ./internal/... ./pkg/... > /dev/null 2>&1
-	@TOTAL=$$(go tool cover -func=coverage.out | grep ^total: | awk '{print $$3}' | tr -d '%'); \
-	echo "Total coverage: $${TOTAL}%"; \
-	if [ $$(echo "$${TOTAL} < 50" | bc) -eq 1 ]; then \
-		echo "FAIL: coverage $${TOTAL}% is below 50% threshold"; \
-		exit 1; \
-	else \
-		echo "OK: coverage meets 50% threshold"; \
-	fi
-
 # ── Lisp targets (delegate to lisp/Makefile) ───────────────────
 
 .PHONY: lisp-build lisp-test lisp-check lisp-clean lisp-coverage lisp-docker
@@ -178,7 +177,7 @@ lisp-clean:
 	@$(MAKE) --no-print-directory -C lisp clean
 
 lisp-coverage:
-	@$(MAKE) --no-print-directory -C lisp coverage
+	@$(MAKE) --no-print-directory -C lisp coverage COVERAGE_MIN=$(COVERAGE_MIN) COVERAGE_REPORT=$(COVERAGE_REPORT)
 
 lisp-docker:
 	@$(MAKE) --no-print-directory -C lisp docker
@@ -195,7 +194,7 @@ lisp-help:
 	@echo "  test             Run test suite (prove framework)"
 	@echo "  check            Run sblint static analysis"
 	@echo "  clean            Remove build artifacts"
-	@echo "  coverage         Generate coverage report"
+	@echo "  coverage         Gate at COVERAGE_MIN=$(COVERAGE_MIN)% (COVERAGE_REPORT=full for HTML)"
 	@echo "  docker           Build Docker image (linux/amd64)"
 	@echo "  release          Build release executable"
 	@echo "  security         Run sblint + trivy"

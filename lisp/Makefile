@@ -14,6 +14,10 @@ LISP_QL := $(LISP) $(LISPOPTS) --load $(QLSETUP)
 
 include ../version.mk
 
+# Coverage settings (inherited from root Makefile or overridden on command line)
+COVERAGE_MIN    ?= 50
+COVERAGE_REPORT ?=
+
 # dev builds get -dev prerelease tag
 build: SEMVER_PRERELEASE := $(or $(SEMVER_PRERELEASE),dev)
 
@@ -76,7 +80,19 @@ test: quicklisp libs version.lisp
 	$(LISPEXEC) test.lisp
 
 coverage: quicklisp libs version.lisp
-	$(LISPEXEC) cover.lisp
+	@$(LISPEXEC) cover.lisp
+ifeq ($(COVERAGE_REPORT),full)
+	@echo "HTML report: coverage/"
+else
+	@TOTAL=$$(cat coverage/percent.txt 2>/dev/null || echo "0"); \
+	echo "Total coverage: $${TOTAL}%"; \
+	if [ $(COVERAGE_MIN) -gt 0 ] && [ $$(echo "$${TOTAL} < $(COVERAGE_MIN)" | bc) -eq 1 ]; then \
+		echo "FAIL: coverage $${TOTAL}% is below $(COVERAGE_MIN)% threshold"; \
+		exit 1; \
+	else \
+		echo "OK: coverage meets $(COVERAGE_MIN)% threshold"; \
+	fi
+endif
 
 # Refresh vendored dependencies (run on connected machine)
 vendor: quicklisp libs
