@@ -55,22 +55,44 @@ coverage: $(call GO_TARGETS,go-coverage) $(call LISP_TARGETS,lisp-coverage)
 docker:   $(call GO_TARGETS,go-docker)   $(call LISP_TARGETS,lisp-docker)
 release:  $(call GO_TARGETS,go-release)  $(call LISP_TARGETS,lisp-release)
 security: $(call GO_TARGETS,go-security) $(call LISP_TARGETS,lisp-security)
-help: help-usage $(call GO_TARGETS,go-help) $(call LISP_TARGETS,lisp-help) help-variables
+define SHOUT_HELP
+Shout! build system
 
-.PHONY: help-usage help-variables
-help-usage:
-	@echo "Usage: make <target> [go|lisp]"
-	@echo ""
-	@echo "  Append 'go' or 'lisp' to run for one implementation only."
-	@echo "  Omit the selector to run for both."
-	@echo ""
+Usage:
+  make <target> [go|lisp]
+  make coverage [go|lisp] [COVERAGE_MIN=N] [COVERAGE_REPORT=full]
+  make build [go|lisp] [VERSION=x.y.z]
 
-help-variables:
-	@echo "Variables:"
-	@echo "  COVERAGE_MIN=N       Coverage gate threshold (default: 50, 0 to disable)"
-	@echo "  COVERAGE_REPORT=full Generate full HTML report instead of gate"
-	@echo "  VERSION=x.y.z        Override semver version"
-	@echo ""
+Targets:
+  build          Build binaries
+  test           Run test suites
+  check          Run static analysis
+  coverage       Run coverage with gate
+  security       Run security scanners
+  docker         Build Docker image
+  release        Build release binaries
+  clean          Remove build artifacts
+  debug-version  Print resolved version variables
+  help           Show this help
+
+  When go or lisp is omitted, the target runs for both.
+
+  Target          Go                           Lisp
+  ------          --                           ----
+  check           go fmt + go vet              sblint
+  coverage        go tool cover                sb-cover expressions
+  docker          linux + darwin multi-arch    linux/amd64 only
+  release         Cross-compile all platforms  No -dev prerelease tag
+  security        gosec + govulncheck + trivy  sblint + trivy
+  test            fmt + vet + race detection   prove framework
+
+Variables:
+  COVERAGE_MIN     Gate threshold  [default: 50, 0 to disable]
+  COVERAGE_REPORT  Report type  [default: gate, full for HTML]
+  VERSION          Override semver version
+endef
+help:
+	@$(info $(SHOUT_HELP)):
 
 # ── Go targets ─────────────────────────────────────────────────
 
