@@ -55,7 +55,22 @@ coverage: $(call GO_TARGETS,go-coverage) $(call LISP_TARGETS,lisp-coverage)
 docker:   $(call GO_TARGETS,go-docker)   $(call LISP_TARGETS,lisp-docker)
 release:  $(call GO_TARGETS,go-release)  $(call LISP_TARGETS,lisp-release)
 security: $(call GO_TARGETS,go-security) $(call LISP_TARGETS,lisp-security)
-help:     $(call GO_TARGETS,go-help)     $(call LISP_TARGETS,lisp-help)
+help: help-usage $(call GO_TARGETS,go-help) $(call LISP_TARGETS,lisp-help) help-variables
+
+.PHONY: help-usage help-variables
+help-usage:
+	@echo "Usage: make <target> [go|lisp]"
+	@echo ""
+	@echo "  Append 'go' or 'lisp' to run for one implementation only."
+	@echo "  Omit the selector to run for both."
+	@echo ""
+
+help-variables:
+	@echo "Variables:"
+	@echo "  COVERAGE_MIN=N       Coverage gate threshold (default: 50, 0 to disable)"
+	@echo "  COVERAGE_REPORT=full Generate full HTML report instead of gate"
+	@echo "  VERSION=x.y.z        Override semver version"
+	@echo ""
 
 # ── Go targets ─────────────────────────────────────────────────
 
@@ -120,11 +135,11 @@ go-help:
 	@echo "Go targets:"
 	@echo "  build            Build binary for current platform"
 	@echo "  test             Run fmt + vet + tests with race detection"
+	@echo "  check            Run go fmt + go vet"
 	@echo "  clean            Remove build artifacts and coverage files"
-	@echo "  coverage         Gate at COVERAGE_MIN=$(COVERAGE_MIN)% (COVERAGE_REPORT=full for HTML)"
+	@echo "  coverage         Coverage gate at COVERAGE_MIN=$(COVERAGE_MIN)% (COVERAGE_REPORT=full for HTML)"
 	@echo "  docker           Build Docker image"
 	@echo "  release          Cross-compile all platform binaries"
-	@echo "  check            Run go fmt + go vet"
 	@echo "  security         Run gosec + govulncheck + trivy"
 	@echo "  debug-version    Print resolved version variables"
 	@echo ""
@@ -194,7 +209,7 @@ lisp-help:
 	@echo "  test             Run test suite (prove framework)"
 	@echo "  check            Run sblint static analysis"
 	@echo "  clean            Remove build artifacts"
-	@echo "  coverage         Gate at COVERAGE_MIN=$(COVERAGE_MIN)% (COVERAGE_REPORT=full for HTML)"
+	@echo "  coverage         Coverage gate at COVERAGE_MIN=$(COVERAGE_MIN)% (COVERAGE_REPORT=full for HTML)"
 	@echo "  docker           Build Docker image (linux/amd64)"
 	@echo "  release          Build release executable"
 	@echo "  security         Run sblint + trivy"
