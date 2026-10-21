@@ -82,6 +82,7 @@ func New(cfg Config, handlers *notify.Registry) (*Server, error) {
 	}
 
 	store := state.NewJSONFileStore(cfg.DBPath)
+	store.ImportExpiry = cfg.Expiry
 	var opts []state.ManagerOption
 	if cfg.Expiry > 0 {
 		opts = append(opts, state.WithExpiry(cfg.Expiry))

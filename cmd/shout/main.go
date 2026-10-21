@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -12,7 +14,15 @@ import (
 	"github.com/cloudfoundry-community/shout/internal/api"
 	"github.com/cloudfoundry-community/shout/internal/notify"
 	"github.com/cloudfoundry-community/shout/internal/redact"
+	"github.com/cloudfoundry-community/shout/internal/state"
 	"github.com/cloudfoundry-community/shout/pkg/version"
+)
+
+// Exit codes of -check-state.
+const (
+	exitStateOK         = 0 // missing, Go format, or a Lisp file that converts
+	exitStateError      = 1 // the file could not be read at all
+	exitStateUnreadable = 3 // the file is in neither format
 )
 
 func main() {
@@ -21,7 +31,7 @@ func main() {
 	log.SetOutput(redact.NewWriter(os.Stderr))
 
 	var cfg api.Config
-	var showVersion bool
+	var showVersion, checkState bool
 
 	flag.IntVar(&cfg.Port, "port", envInt("SHOUT_PORT", 7109), "HTTP listen port")
 	flag.StringVar(&cfg.DBPath, "db", envStr("SHOUT_DATABASE", "/var/db/shout.db"), "state database path")
@@ -32,6 +42,7 @@ func main() {
 	flag.StringVar(&cfg.TLSCert, "tls-cert", envStr("SHOUT_TLS_CERT", ""), "path to TLS certificate file")
 	flag.StringVar(&cfg.TLSKey, "tls-key", envStr("SHOUT_TLS_KEY", ""), "path to TLS private key file")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
+	flag.BoolVar(&checkState, "check-state", false, "report whether the state file can be loaded, without changing it, and exit")
 	flag.Parse()
 
 	if showVersion {
@@ -41,6 +52,10 @@ func main() {
 			fmt.Printf("  commit: %s (%s)\n", version.BuildVcsId, version.BuildVcsIdDate)
 		}
 		os.Exit(0)
+	}
+
+	if checkState {
+		os.Exit(runCheckState(cfg.DBPath, os.Stdout, os.Stderr))
 	}
 
 	// Register notification handlers.
@@ -69,6 +84,38 @@ func main() {
 		log.Printf("server error: %v", err)
 		os.Exit(1)
 	}
+}
+
+// runCheckState reports on the state file at path without writing to it,
+// and returns the exit code. A missing file, a Go-format file, and a Lisp
+// file that the server will convert at startup all exit 0. A file in
+// neither format exits 3, and a file that cannot be read exits 1.
+func runCheckState(path string, stdout, stderr io.Writer) int {
+	insp, err := state.NewJSONFileStore(path).Inspect()
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "shout: %s\n", redact.String(err.Error()))
+		if errors.Is(err, state.ErrUnreadable) {
+			return exitStateUnreadable
+		}
+		return exitStateError
+	}
+	switch insp.Format {
+	case state.FormatMissing:
+		_, _ = fmt.Fprintf(stdout, "state file %s: missing; the server starts with no topics\n", path)
+	case state.FormatGo:
+		_, _ = fmt.Fprintf(stdout, "state file %s: Go format, %s\n", path, topics(insp.Topics))
+	case state.FormatLisp:
+		_, _ = fmt.Fprintf(stdout, "state file %s: Lisp format, %s to import, %d skipped; the server converts it at startup\n",
+			path, topics(insp.Topics), insp.Skipped)
+	}
+	return exitStateOK
+}
+
+func topics(n int) string {
+	if n == 1 {
+		return "1 topic"
+	}
+	return fmt.Sprintf("%d topics", n)
 }
 
 func envStr(key, fallback string) string {

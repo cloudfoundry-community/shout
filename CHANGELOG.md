@@ -44,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests with race detection (78.7% coverage)
 - Integration test suite (12 tests + slack-app tests)
 - Semver versioning via build-time ldflags
+- The server converts a Lisp Shout! state file when it starts. Before this, the BOSH job moved such a file aside, so topics that were broken at the upgrade lost their reminders and never sent a "fixed" notification. When the state file holds the JSON list the Lisp server wrote, or the bare `null` it wrote with no topics, the server keeps the original beside it as `<file>.lisp-<unix seconds>`, writes the converted state the same way a normal save does, and logs one line with the number of topics it imported. Imported topics get the configured expiry, and a last event whose timestamps the Lisp server lost counts as reported at the import. A file in neither format still stops the server with an error that names the file, and the file is left untouched.
+- A `-check-state` flag reports whether the state file can be loaded and exits without changing anything. It prints one line and exits 0 when the file is missing, in the Go format, or a Lisp file that the server will convert. It exits 3 when the file is in neither format, and 1 when the file cannot be read.
 
 ### Changed
 - Rules format changed from custom Lisp DSL to YAML with expr-lang expressions
