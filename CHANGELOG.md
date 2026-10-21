@@ -50,5 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Single static binary replaces SBCL + Quicklisp runtime
 - BOSH release simplified (no post-start curl, YAML rules file)
 
+### Fixed
+- SIGTERM and SIGINT now save the state file and exit 0. Before this, the server exited with status 1 as soon as the listener closed, and that exit raced the final save, so the last state changes could be lost. Shutdown now drains in-flight requests for up to 20 seconds, cancels any notification still sending, waits up to 5 more seconds, and then writes the state file. A second signal exits at once.
+
 ### Removed
 - Travis CI configuration (replaced by CodeQL and Concourse)

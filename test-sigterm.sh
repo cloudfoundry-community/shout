@@ -5,9 +5,29 @@ set -euo pipefail
 # Runs from the host — orchestrates docker compose to verify:
 #   1. Shout persists state to disk on SIGTERM
 #   2. State survives restart (reloaded from persisted DB)
+#
+# SHOUT_IMPL selects the implementation under test: "go" (the default)
+# uses docker-compose.yml at the repo root, and "lisp" uses
+# lisp/docker-compose.yml.
 
-SHOUT_URL="http://localhost:7100"
-MOCK_SLACK_URL="http://localhost:8080"
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+SHOUT_IMPL="${SHOUT_IMPL:-go}"
+case "$SHOUT_IMPL" in
+  go)
+    COMPOSE=(docker compose)
+    SHOUT_URL="http://localhost:7109"
+    ;;
+  lisp)
+    COMPOSE=(docker compose -f lisp/docker-compose.yml)
+    SHOUT_URL="http://localhost:7100"
+    ;;
+  *)
+    echo "SHOUT_IMPL must be go or lisp, not '$SHOUT_IMPL'" >&2
+    exit 2
+    ;;
+esac
+MOCK_SLACK_URL="${MOCK_SLACK_URL:-http://localhost:8080}"
 OPS_CREDS="shouty:abouty"
 ADMIN_CREDS="admin:sadmin"
 
@@ -54,14 +74,20 @@ wait_for_healthy() {
   return 1
 }
 
-state_count() {
+# GET /states returns a list from Lisp and a map keyed by topic from Go.
+# states_list prints the states as a JSON list either way.
+states_list() {
   curl -sf -u "$OPS_CREDS" "$SHOUT_URL/states" \
-    | python3 -c "import sys,json; print(len(json.load(sys.stdin)))"
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(list(d.values()) if isinstance(d, dict) else d))"
+}
+
+state_count() {
+  states_list | python3 -c "import sys,json; print(len(json.load(sys.stdin)))"
 }
 
 cleanup() {
   bold "Cleaning up..."
-  docker compose down -v 2>/dev/null || true
+  "${COMPOSE[@]}" down -v 2>/dev/null || true
 }
 
 # ── Start fresh ─────────────────────────────────────────────────
@@ -74,16 +100,27 @@ trap cleanup EXIT
 
 cleanup
 bold "Step 1: Starting services..."
-docker compose up -d
+"${COMPOSE[@]}" up -d --build
 wait_for_healthy "mock-slack" "$MOCK_SLACK_URL/health" 30
 wait_for_healthy "shout" "$SHOUT_URL/info" 120
 
 # ── Load rules + create state ──────────────────────────────────
 bold "Step 2: Loading rules and creating state..."
-RULES='((for *
+if [ "$SHOUT_IMPL" = go ]; then
+  RULES='rules:
+  - for: "*"
+    when:
+      - match: "*"
+        do:
+          - slack:
+              webhook: "http://mock-slack:8080/"
+              text: "{{ .Topic }} is {{ .Status }}"'
+else
+  RULES='((for *
       (when *
         (slack :webhook "http://mock-slack:8080/"
                :text "$topic is $status"))))'
+fi
 
 curl -sf -u "$ADMIN_CREDS" -X POST "$SHOUT_URL/rules" \
   -H "Content-Type: text/plain" \
@@ -110,29 +147,31 @@ bold "Step 3: Capturing state before shutdown..."
 pre_count=$(state_count)
 assert_eq "State exists before shutdown" "1" "$pre_count"
 
-pre_states=$(curl -sf -u "$OPS_CREDS" "$SHOUT_URL/states")
+pre_states=$(states_list)
 pre_status=$(echo "$pre_states" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['state'])")
 assert_eq "State is broken before shutdown" "broken" "$pre_status"
 
 # ── Send SIGTERM via docker compose stop ──────────────────────
 bold "Step 4: Stopping shout (SIGTERM)..."
-docker compose stop shout
+"${COMPOSE[@]}" stop shout
+exit_code=$(docker inspect --format '{{.State.ExitCode}}' "$("${COMPOSE[@]}" ps -a -q shout)")
+assert_eq "Shout exited cleanly on SIGTERM" "0" "$exit_code"
 
 # ── Check logs for graceful shutdown message ──────────────────
 bold "Step 5: Checking shutdown logs..."
-logs=$(docker compose logs shout 2>&1)
+logs=$("${COMPOSE[@]}" logs shout 2>&1)
 assert_contains "Log contains graceful shutdown message" "graceful shutdown complete" "$logs"
 
 # ── Restart and verify state persisted ─────────────────────────
 bold "Step 6: Restarting shout..."
-docker compose start shout
+"${COMPOSE[@]}" start shout
 wait_for_healthy "shout" "$SHOUT_URL/info" 120
 
 bold "Step 7: Verifying state survived restart..."
 post_count=$(state_count)
 assert_eq "State count after restart" "$pre_count" "$post_count"
 
-post_states=$(curl -sf -u "$OPS_CREDS" "$SHOUT_URL/states")
+post_states=$(states_list)
 post_status=$(echo "$post_states" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['state'])")
 assert_eq "State is still broken after restart" "broken" "$post_status"
 

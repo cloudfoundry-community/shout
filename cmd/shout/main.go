@@ -50,11 +50,19 @@ func main() {
 		log.Fatalf("failed to initialize: %v", err)
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
+	// The first SIGINT or SIGTERM starts a graceful shutdown that drains
+	// requests and saves state. Stopping the notification as soon as it
+	// fires restores the default action, so a second signal exits at once.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
 
 	if err := srv.Run(ctx); err != nil {
-		log.Fatalf("server error: %v", err)
+		log.Printf("server error: %v", err)
+		os.Exit(1)
 	}
 }
 
