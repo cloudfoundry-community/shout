@@ -55,3 +55,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - Travis CI configuration (replaced by CodeQL and Concourse)
+
+### Security
+- Log lines and API error responses no longer reveal webhook secrets. When a delivery failed, the `slack`, `webhook`, and `slack-app` handlers returned the error from `net/http`, which quotes the full target URL, and the server logged it. For a Slack incoming webhook that URL holds the secret path, so a DNS outage or an egress block wrote every webhook secret to `shout.log`. The handlers now mask the URL in their errors, and the server masks URLs again in every log line and in the error that `POST /rules` returns. The mask hides everything after `/services/` in a path, and it hides the user information, the query, and the fragment of any URL.

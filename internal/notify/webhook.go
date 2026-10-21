@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/cloudfoundry-community/shout/internal/redact"
 )
 
 // WebhookHandler sends notifications via generic HTTP POST webhooks.
@@ -30,13 +32,13 @@ func (w *WebhookHandler) Send(ctx context.Context, args map[string]string) error
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("webhook handler: creating request: %w", err)
+		return fmt.Errorf("webhook handler: creating request: %w", redact.Err(err))
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("webhook handler: sending request: %w", err)
+		return fmt.Errorf("webhook handler: sending request: %w", redact.Err(err))
 	}
 	defer resp.Body.Close()
 

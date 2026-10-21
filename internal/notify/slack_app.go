@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+
+	"github.com/cloudfoundry-community/shout/internal/redact"
 )
 
 // SlackAppHandler sends notifications via the Slack Web API (chat.postMessage).
@@ -81,14 +83,14 @@ func (s *SlackAppHandler) sendToURL(ctx context.Context, url string, args map[st
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("slack-app handler: creating request: %w", err)
+		return fmt.Errorf("slack-app handler: creating request: %w", redact.Err(err))
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("slack-app handler: sending request: %w", err)
+		return fmt.Errorf("slack-app handler: sending request: %w", redact.Err(err))
 	}
 	defer resp.Body.Close()
 

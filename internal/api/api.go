@@ -16,6 +16,7 @@ import (
 
 	"github.com/cloudfoundry-community/shout/internal/engine"
 	"github.com/cloudfoundry-community/shout/internal/notify"
+	"github.com/cloudfoundry-community/shout/internal/redact"
 	"github.com/cloudfoundry-community/shout/internal/state"
 	"github.com/cloudfoundry-community/shout/pkg/version"
 	"gopkg.in/yaml.v3"
@@ -338,7 +339,9 @@ func (s *Server) fireRules(evt *state.Event, status string) {
 			continue
 		}
 		if err := h.Send(s.work, r.Args); err != nil {
-			log.Printf("handler %q error: %v", r.Handler, err)
+			// Handler errors can quote the target URL, and the URL holds
+			// the webhook secret, so mask it before it reaches the log.
+			log.Printf("handler %q error: %s", r.Handler, redact.String(err.Error()))
 		}
 		if r.Reminder > 0 {
 			s.states.SetReminder(evt.Topic, int64(r.Reminder.Seconds()))
@@ -435,7 +438,9 @@ func (s *Server) handlePostRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.loadRules(data); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		// Parse errors can quote the offending rule, which may hold a
+		// webhook URL, so mask URL secrets before answering.
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": redact.String(err.Error())})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

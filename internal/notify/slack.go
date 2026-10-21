@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/cloudfoundry-community/shout/internal/redact"
 )
 
 var httpClient = &http.Client{Timeout: 30 * time.Second}
@@ -49,13 +51,13 @@ func (s *SlackHandler) Send(ctx context.Context, args map[string]string) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhook, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("slack handler: creating request: %w", err)
+		return fmt.Errorf("slack handler: creating request: %w", redact.Err(err))
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("slack handler: sending request: %w", err)
+		return fmt.Errorf("slack handler: sending request: %w", redact.Err(err))
 	}
 	defer resp.Body.Close()
 

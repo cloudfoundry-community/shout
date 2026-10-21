@@ -11,10 +11,15 @@ import (
 
 	"github.com/cloudfoundry-community/shout/internal/api"
 	"github.com/cloudfoundry-community/shout/internal/notify"
+	"github.com/cloudfoundry-community/shout/internal/redact"
 	"github.com/cloudfoundry-community/shout/pkg/version"
 )
 
 func main() {
+	// Every log line passes through the redactor, so a URL secret that
+	// slips into an error message still never reaches the log file.
+	log.SetOutput(redact.NewWriter(os.Stderr))
+
 	var cfg api.Config
 	var showVersion bool
 
